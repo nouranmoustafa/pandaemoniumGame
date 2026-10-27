@@ -29,7 +29,7 @@ export class Game {
   readonly chapter: ParkChapter;
   private post: PostFX;
   private timer = new THREE.Timer();
-  private endInfo = { caught: 0, time: 0 };
+  private endInfo: { caught: number; time: number; winner?: 'demon' | 'visitor' } = { caught: 0, time: 0 };
   private transitioning = false;
   /** Frames rendered — exposed for automated smoke tests. */
   frames = 0;
@@ -52,7 +52,7 @@ export class Game {
     this.camera = new ChaseCamera(window.innerWidth / window.innerHeight);
     this.audio = new AudioEngine(this.bus);
     this.ui = new UI({
-      onPlay: () => this.play(),
+      onPlay: (mode) => this.play(mode),
       onRestart: () => this.restart(),
       onResume: () => this.states.go('playing'),
       onQuit: () => this.toTitle(),
@@ -62,10 +62,12 @@ export class Game {
       },
     });
     this.chapter = new ParkChapter(
-      { scene: this.scene, camera: this.camera, input: this.input, bus: this.bus, audio: this.audio, ui: this.ui },
+      { scene: this.scene, canvas: this.renderer.domElement, camera: this.camera, input: this.input, bus: this.bus, audio: this.audio, ui: this.ui },
       { startX: opts.startX },
     );
     this.post = new PostFX(this.renderer, this.scene, this.camera.camera);
+    // Warm the Demon's shaders now rather than mid-chase.
+    this.chapter.abilities.prewarm(this.renderer, this.scene, this.camera.camera);
 
     this.bus.on('visitor:caught', () => {
       this.post.pulseHurt();
@@ -94,7 +96,12 @@ export class Game {
             'It kept the light on for you.',
             'Inside, something is laying out a dress in your size.',
           ];
-          this.ui.showEnd(this.endInfo.caught, this.endInfo.time, lines[Math.floor(Math.random() * lines.length)]);
+          const versusLines = {
+            demon: 'She is inside now. The Demon thanks you for your assistance.',
+            visitor: 'She arrived on her own terms. The house is pretending that was the plan.',
+          };
+          const line = this.endInfo.winner ? versusLines[this.endInfo.winner] : lines[Math.floor(Math.random() * lines.length)];
+          this.ui.showEnd(this.endInfo.caught, this.endInfo.time, line, this.endInfo.winner);
         },
         exit: () => this.ui.hideEnd(),
       });
@@ -107,7 +114,7 @@ export class Game {
       } else if (a === 'restart' && (s === 'ended' || s === 'paused')) {
         this.restart();
       } else if (a === 'confirm' && s === 'title') {
-        this.play();
+        this.play('single');
       }
     });
 
@@ -121,9 +128,10 @@ export class Game {
     this.renderer.setAnimationLoop(this.loop);
   }
 
-  play(): void {
+  play(mode: 'single' | 'versus' = 'single'): void {
     if (!this.states.is('title') || this.transitioning) return;
     this.audio.unlock();
+    this.chapter.setMode(mode);
     this.ui.showTitle(false);
     this.chapter.start();
     this.states.go('playing');

@@ -1,5 +1,5 @@
 import { LANES, type LaneIndex, RUN, SLIDE } from '../config';
-import type { EventBus } from '../core/Events';
+import type { CatchCause, EventBus } from '../core/Events';
 import type { Input } from '../core/Input';
 import { clamp, damp, lerp, smoothstep, spring } from '../core/math';
 
@@ -40,6 +40,19 @@ export class VisitorController {
   /** Inputs are ignored while false (title screen, ending). */
   controllable = false;
 
+  // --- External forces (set by hazards each frame) ---
+  private traction = 1;
+  private windAccel = 0;
+  private windDrag = 0;
+  private windPushDir: -1 | 0 | 1 = 0;
+  private windPushTime = 0;
+  /** Extra target speed from a following wind (the false shortcut). */
+  tailwind = 0;
+  // Smoothed values the animator reads.
+  slip = 0;
+  windLean = 0;
+  headwind = 0;
+
   constructor(private bus: EventBus) {}
 
   reset(x = 0): void {
@@ -60,6 +73,12 @@ export class VisitorController {
     this.usedDodge = false;
     this.sprintTaps = 0;
     this.controllable = false;
+    this.traction = 1;
+    this.windAccel = this.windDrag = 0;
+    this.windPushDir = 0;
+    this.windPushTime = 0;
+    this.tailwind = 0;
+    this.slip = this.windLean = this.headwind = 0;
   }
 
   start(): void {
@@ -77,7 +96,7 @@ export class VisitorController {
   }
 
   /** Returns true if the hit landed (not during grace period). */
-  catch(by: 'grass' | 'branch', side: 'L' | 'R' = 'L'): boolean {
+  catch(by: CatchCause, side: 'L' | 'R' = 'L'): boolean {
     if (this.invulnerable > 0 || this.mode === 'arrive' || this.mode === 'idle') return false;
     this.stumbleTime = 0;
     this.stumbleSide = side;
@@ -101,13 +120,27 @@ export class VisitorController {
       if (this.stumbleTime > RUN.stumbleDuration + 0.5) this.stumbleTime = -1;
     }
 
+    // Forces applied by hazards during the previous frame.
+    const traction = this.traction;
+    const windAccel = this.windAccel;
+    const windDrag = this.windDrag;
+    const windDir = this.windPushDir;
+
     // --- Input ---
+    let laneInput = false;
     if (this.controllable) {
-      if (input.consume('up')) this.changeLane(-1);
-      if (input.consume('down')) this.changeLane(1);
+      if (input.consume('up')) {
+        this.changeLane(-1);
+        laneInput = true;
+      }
+      if (input.consume('down')) {
+        this.changeLane(1);
+        laneInput = true;
+      }
       if (input.consume('sprint')) {
         this.sprintTaps++;
-        const gain = this.stumbling ? RUN.effortPerTap * 0.5 : RUN.effortPerTap;
+        // Wet stones: taps find less grip.
+        const gain = (this.stumbling ? RUN.effortPerTap * 0.5 : RUN.effortPerTap) * lerp(0.45, 1, traction);
         this.effort = Math.min(1, this.effort + gain);
         if (this.mode === 'slide') this.speed = Math.min(SLIDE.maxSpeed, this.speed + SLIDE.paddleBoost);
         this.bus.emit('visitor:sprintTap', { effort: this.effort });
@@ -115,10 +148,33 @@ export class VisitorController {
     }
     this.effort = Math.max(0, this.effort - RUN.effortDecay * dt);
 
+    // --- Wind: a sustained shove toward one side. She can brace by steering. ---
+    if (windDir !== 0 && this.controllable) {
+      if (laneInput) {
+        if (this.windPushTime > 0.15) this.bus.emit('visitor:braced', {});
+        this.windPushTime = -0.5;
+      }
+      this.windPushTime += dt;
+      if (this.windPushTime > 0.8) {
+        const before = this.lane;
+        this.changeLane(windDir, true);
+        if (this.lane !== before) this.bus.emit('visitor:blown', { lane: this.lane });
+        this.windPushTime = -0.9;
+      }
+    } else {
+      this.windPushTime = Math.min(this.windPushTime, 0);
+      this.windPushTime = Math.min(0, this.windPushTime + dt);
+    }
+
     // --- Lanes: a stiff spring so dodges are immediate but carry weight. ---
-    const stiffness = this.mode === 'slide' ? RUN.laneStiffness * 0.75 : RUN.laneStiffness;
-    const damping = this.stumbling ? RUN.laneDamping * 1.6 : RUN.laneDamping;
+    // Puddles make it loose and skiddy; wind leans on it.
+    const stiffness = (this.mode === 'slide' ? RUN.laneStiffness * 0.75 : RUN.laneStiffness) * lerp(0.3, 1, traction);
+    const damping = (this.stumbling ? RUN.laneDamping * 1.6 : RUN.laneDamping) * lerp(0.45, 1, traction);
     [this.z, this.laneVel] = spring(this.z, this.laneVel, LANES[this.lane], stiffness, damping, dt);
+    this.laneVel += windAccel * dt;
+    this.slip = damp(this.slip, traction < 0.8 ? 1 - traction : 0, 6, dt);
+    this.windLean = damp(this.windLean, windAccel / 40, 5, dt);
+    this.headwind = damp(this.headwind, windDrag, 4, dt);
 
     // --- Ground ---
     this.slope = ground.slopeAt(this.x + 0.6, this.z);
@@ -137,12 +193,14 @@ export class VisitorController {
         target += Math.max(0, -this.slope) * RUN.slopeDrag * 0.6;
         target = Math.max(2.2, target);
         if (this.stumbling) target *= lerp(RUN.stumbleSpeedFactor, 1, smoothstep(0.2, RUN.stumbleDuration, this.stumbleTime));
-        const rate = target > this.speed ? RUN.accel : RUN.decel;
+        target *= 1 - windDrag * 0.42;
+        target += this.tailwind;
+        const rate = (target > this.speed ? RUN.accel : RUN.decel) * lerp(0.45, 1, traction);
         this.speed = damp(this.speed, target, rate, dt);
         break;
       }
       case 'slide': {
-        const a = -this.slope * SLIDE.gravity - SLIDE.friction * this.speed + 2.4;
+        const a = -this.slope * SLIDE.gravity - SLIDE.friction * this.speed + 2.4 - windDrag * 5;
         this.speed = clamp(this.speed + a * dt, SLIDE.minSpeed, SLIDE.maxSpeed);
         break;
       }
@@ -157,19 +215,43 @@ export class VisitorController {
     // Follow the ground tightly; a little lag when sliding over ripples reads as weight.
     this.y = this.mode === 'slide' ? damp(this.y, gy, 18, dt) : damp(this.y, gy, 30, dt);
     if (this.y < gy) this.y = gy;
+
+    // Hazards re-apply their forces every frame they act.
+    this.traction = 1;
+    this.windAccel = 0;
+    this.windDrag = 0;
+    this.windPushDir = 0;
   }
 
-  private changeLane(dir: -1 | 1): void {
+  /** Called each frame by a gust she is standing in. */
+  applyWind(lateralAccel: number, drag: number, pushDir: -1 | 0 | 1): void {
+    this.windAccel += lateralAccel;
+    this.windDrag = Math.max(this.windDrag, drag);
+    if (pushDir !== 0) this.windPushDir = pushDir;
+  }
+
+  /** Called each frame by a puddle she is standing in (0 = ice, 1 = dry). */
+  applyTraction(t: number): void {
+    this.traction = Math.min(this.traction, t);
+  }
+
+  /** A clean dodge gives a small burst of relief. */
+  rewardDodge(): void {
+    if (this.mode === 'run') this.speed = Math.min(RUN.sprintSpeed + 1, this.speed + 0.9);
+  }
+
+  private changeLane(dir: -1 | 1, forced = false): void {
     const next = clamp(this.lane + dir, 0, 2) as LaneIndex;
     if (next === this.lane) {
       // Bump against the edge: a small nudge so the input still feels acknowledged.
       this.laneVel += dir * 1.5;
       return;
     }
+    const from = this.lane;
     this.lane = next;
-    this.usedDodge = true;
+    if (!forced) this.usedDodge = true;
     // Kick the spring so the change starts instantly.
-    this.laneVel += dir * 4;
-    this.bus.emit('visitor:lane', { lane: next });
+    this.laneVel += dir * (forced ? 2.5 : 4);
+    this.bus.emit('visitor:lane', { lane: next, from });
   }
 }

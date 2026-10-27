@@ -1,25 +1,31 @@
 import type { EventBus } from '../core/Events';
-import type { Obstacle, ObstacleContext } from '../obstacles/Obstacle';
+import type { ObstacleContext } from '../obstacles/Obstacle';
 import type { Visitor } from '../visitor/Visitor';
 import type { Environment } from '../world/Environment';
+import type { DemonAbilitySystem } from './abilities/DemonAbilitySystem';
+import type { DemonMind } from './DemonMind';
+import type { VisitorObserver } from './VisitorObserver';
 
 export interface DemonContext {
   visitor: Visitor;
   env: Environment;
-  obstacles: readonly Obstacle[];
   obstacleCtx: ObstacleContext;
   bus: EventBus;
+  abilities: DemonAbilitySystem;
+  mind: DemonMind;
+  observer: VisitorObserver;
+  /** True while the false shortcut is pretending to be safe. */
+  peaceful: boolean;
 }
 
 /**
- * The Demon is whoever controls the house and the park.
- *
- * Stage 1 ships the AI version. In local 1v1 a HumanDemonDirector will
- * implement this same interface, reading the Demon player's input to choose
- * which obstacle to warn/strike and when — obstacles already expose warn()
- * and strike() so nothing else has to change.
+ * The Demon is whoever controls the park's powers.
+ * - AIDemonDirector: single player, reactive rule-based AI.
+ * - HumanDemonDirector: local 1v1, a second player with the mouse.
+ * Both act only through DemonAbilitySystem, so the rules are identical.
  */
 export interface DemonDirector {
+  readonly kind: 'ai' | 'human';
   reset(): void;
   update(dt: number, ctx: DemonContext): void;
 }

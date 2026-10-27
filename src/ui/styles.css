@@ -261,3 +261,134 @@ html, body {
   .title-screen { padding: 0 16px; }
   .stage-mark { left: 16px; }
 }
+
+.howto .ht-head {
+  margin-top: 1em;
+  font-family: var(--display);
+  letter-spacing: 0.3em;
+  font-size: 0.85em;
+  color: var(--amber);
+}
+.howto.open { max-height: 40rem; }
+.hint.wide { font-size: clamp(0.8rem, 1.2vw, 1.05rem); letter-spacing: 0.25em; }
+
+.dodge-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(220, 225, 255, 0.16) 100%);
+  opacity: 0;
+}
+.dodge-flash.flash { animation: dodgeBreath 0.55s ease-out; }
+@keyframes dodgeBreath { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---------- 1v1 Demon panel ---------- */
+.demon-panel {
+  position: fixed;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  z-index: 12;
+  padding: 0.7rem 0.8rem 0.6rem;
+  background: linear-gradient(180deg, rgba(10, 7, 14, 0.72), rgba(10, 7, 14, 0.5));
+  border: 1px solid rgba(255, 179, 107, 0.18);
+  border-radius: 3px;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  font-family: var(--display);
+  user-select: none;
+}
+.demon-panel.show { opacity: 1; transform: none; pointer-events: auto; }
+.demon-panel.refuse { animation: refuse 0.35s ease; }
+@keyframes refuse {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.dp-title { font-size: 0.7rem; letter-spacing: 0.35em; color: var(--amber); margin-bottom: 0.15rem; }
+.dp-title span { color: rgba(233, 225, 211, 0.35); }
+.dp-score { font-size: 0.68rem; letter-spacing: 0.25em; color: rgba(233, 225, 211, 0.55); margin-bottom: 0.55rem; }
+.dp-score b { color: var(--ink); font-weight: 400; }
+.dp-row { display: flex; gap: 0.45rem; }
+.dp-power {
+  --cd: 0;
+  position: relative;
+  width: 4.1rem;
+  height: 4.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  color: var(--ink);
+  background: rgba(20, 14, 26, 0.75);
+  border: 1px solid rgba(233, 225, 211, 0.16);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  overflow: hidden;
+  transition: border-color 0.25s, background 0.25s, transform 0.2s;
+}
+.dp-power svg { width: 1.45rem; height: 1.45rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.dp-power:hover { border-color: rgba(255, 179, 107, 0.5); }
+.dp-power.selected { border-color: var(--amber); background: rgba(60, 34, 20, 0.7); color: var(--amber); transform: translateY(-2px); }
+/* Cooldown: a dark veil drains clockwise. */
+.dp-power::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(rgba(5, 3, 8, 0.78) calc(var(--cd) * 360deg), transparent 0);
+  pointer-events: none;
+}
+.dp-power.cooling { color: rgba(233, 225, 211, 0.45); cursor: not-allowed; }
+.dp-cd {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.3rem;
+  font-style: normal;
+  font-size: 0.62rem;
+  color: rgba(233, 225, 211, 0.7);
+  z-index: 1;
+}
+.dp-power.fired { animation: fired 0.6s ease-out; }
+@keyframes fired {
+  0% { box-shadow: 0 0 0 0 rgba(255, 179, 107, 0.7); }
+  100% { box-shadow: 0 0 0 14px rgba(255, 179, 107, 0); }
+}
+.dp-status {
+  margin-top: 0.5rem;
+  max-width: 17.5rem;
+  min-height: 1.1em;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: #f2d9bd;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.dp-status.show { opacity: 1; }
+.dp-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 13;
+  pointer-events: none;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: #f3e3c4;
+  text-shadow: 0 0 6px #000, 0 0 2px #000;
+  opacity: 0;
+  white-space: nowrap;
+}
+.dp-tip.show { opacity: 1; }
+.dp-tip.bad { color: #e07a80; }
+body.demon-aiming canvas { cursor: crosshair; }
+
+@media (max-width: 700px) {
+  .demon-panel { right: 16px; bottom: 16px; }
+  .dp-power { width: 3.4rem; height: 3.7rem; }
+}

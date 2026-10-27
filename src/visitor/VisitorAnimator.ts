@@ -20,6 +20,12 @@ export interface AnimInput {
   roll: number;
   /** Ending: being drawn toward the house. */
   arriving: boolean;
+  /** Sideways wind force, roughly -1..1 (positive pushes toward world +Z, her right). */
+  windLean?: number;
+  /** Headwind strength 0..1. */
+  headwind?: number;
+  /** Loss of footing on wet stone 0..1. */
+  slip?: number;
 }
 
 const TAU = Math.PI * 2;
@@ -100,6 +106,35 @@ export class VisitorAnimator {
     this.target.add('spine', slopeLean * 0.9 * (1 - a.slide), 0, 0);
     // Tilting pavement: running, she balances against it; sliding, she rides it.
     rr[2] += lerp(a.roll * 0.45, -a.roll * 1.1, a.slide);
+
+    // Wind: lean INTO the push, hunch forward, raise an arm against the gust.
+    const wl = clamp(a.windLean ?? 0, -1.2, 1.2);
+    const hw = clamp(a.headwind ?? 0, 0, 1);
+    const gust = Math.min(1, Math.abs(wl) + hw);
+    if (gust > 0.01) {
+      rr[2] += -wl * 0.26;
+      this.target.add('spine', hw * 0.28, 0, wl * 0.12);
+      this.target.add('head', hw * 0.15, -wl * 0.25, 0);
+      const flutter = Math.sin(t * 17) * 0.05 * gust;
+      // The arm on the windward side comes up to shield her face.
+      const shieldL = wl < 0 ? Math.min(1, -wl + hw * 0.6) : hw * 0.4;
+      const shieldR = wl > 0 ? Math.min(1, wl + hw * 0.6) : hw * 0.4;
+      this.target.blendJoint('shoulderL', -1.45 + flutter, 0.35, 0.25, shieldL * 0.8);
+      this.target.blendJoint('elbowL', -1.9, 0, 0, shieldL * 0.8);
+      this.target.blendJoint('shoulderR', -1.45 - flutter, -0.35, -0.25, shieldR * 0.8);
+      this.target.blendJoint('elbowR', -1.9, 0, 0, shieldR * 0.8);
+    }
+
+    // Slipping on a puddle: arms fly out, hips wobble.
+    const slip = clamp(a.slip ?? 0, 0, 1);
+    if (slip > 0.01) {
+      const wob = Math.sin(t * 13) * slip;
+      rr[2] += wob * 0.09;
+      rr[0] += Math.sin(t * 9 + 1) * 0.05 * slip;
+      this.target.add('shoulderL', -0.3 * slip, 0, 0.9 * slip + wob * 0.2);
+      this.target.add('shoulderR', -0.3 * slip, 0, -0.9 * slip + wob * 0.2);
+      this.target.add('spine', -0.1 * slip, 0, -wob * 0.12);
+    }
 
     if (a.arriving) {
       // Drawn in: arms limp, head lifts toward the house.

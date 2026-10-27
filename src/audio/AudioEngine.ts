@@ -1,4 +1,4 @@
-import type { EventBus } from '../core/Events';
+import type { CatchCause, EventBus, HazardKind } from '../core/Events';
 
 /**
  * Procedural sound: wind, a low drone, a sparse music-box motif, footsteps,
@@ -21,16 +21,73 @@ export class AudioEngine {
   private rumbleGain!: GainNode;
   private musicTimer = 0;
   private muted = false;
+  private droneGain!: GainNode;
+  private droneFilter!: BiquadFilterNode;
+  private padGain!: GainNode;
+  private peace = false;
 
   constructor(bus: EventBus) {
     bus.on('visitor:step', ({ speed }) => this.footstep(speed));
     bus.on('visitor:caught', ({ by }) => this.impact(by));
-    bus.on('obstacle:warn', ({ kind }) => (kind === 'grass' ? this.rustle(1.2) : this.creak()));
-    bus.on('obstacle:strike', ({ kind }) => (kind === 'grass' ? this.burst() : this.whoosh()));
+    bus.on('obstacle:warn', ({ kind }) => this.warnSound(kind));
+    bus.on('obstacle:strike', ({ kind }) => this.strikeSound(kind));
+    bus.on('obstacle:end', ({ kind }) => {
+      if (kind === 'fire') this.ashCollapse();
+    });
     bus.on('pavement:rise', () => this.grind(5));
     bus.on('pavement:slide', () => this.grind(3));
+    bus.on('pavement:sarcasm', () => this.grind(2));
     bus.on('demon:line', () => this.whisper());
+    bus.on('demon:remark', () => {
+      this.whisper();
+      setTimeout(() => this.bell(98, 0.12), 300);
+    });
+    bus.on('demon:phase', ({ phase }) => this.phaseShift(phase === 'desperate' ? 2 : 1));
     bus.on('visitor:lane', () => this.swish());
+    bus.on('visitor:dodge', () => this.relief());
+    bus.on('visitor:blown', () => {
+      this.thud(70, 0.25);
+      this.swish();
+    });
+    bus.on('trick:sign', () => this.creak(1.8, 0.12));
+    bus.on('trick:bench', () => this.bell(130.8, 0.1));
+    bus.on('trick:lights', () => this.hum());
+    bus.on('trick:shortcut', ({ active }) => {
+      if (!active) {
+        this.thud(40, 0.45);
+        this.bell(73.4, 0.18);
+      }
+    });
+  }
+
+  private warnSound(kind: HazardKind): void {
+    switch (kind) {
+      case 'grass':
+        return this.rustle(1.2);
+      case 'branch':
+        return this.creak();
+      case 'wind':
+        return this.howl(1.4, 0.18);
+      case 'water':
+        return this.gurgle();
+      case 'fire':
+        return this.embersHiss();
+    }
+  }
+
+  private strikeSound(kind: HazardKind): void {
+    switch (kind) {
+      case 'grass':
+        return this.burst();
+      case 'branch':
+        return this.whoosh();
+      case 'wind':
+        return this.howl(2.2, 0.35);
+      case 'water':
+        return this.fountain();
+      case 'fire':
+        return this.ignite();
+    }
   }
 
   /** Must be called from a user gesture (browser autoplay policy). */
@@ -116,7 +173,13 @@ export class AudioEngine {
     lfo.connect(lfoGain).connect(this.windFilter.frequency);
     lfo.start();
 
-    // Drone: two detuned low tones, slowly beating.
+    // Drone: two detuned low tones, slowly beating. It tightens as the Demon loses patience.
+    this.droneGain = ctx.createGain();
+    this.droneGain.gain.value = 1;
+    this.droneFilter = ctx.createBiquadFilter();
+    this.droneFilter.type = 'lowpass';
+    this.droneFilter.frequency.value = 180;
+    this.droneFilter.connect(this.droneGain).connect(this.amb);
     for (const [f, g] of [
       [55, 0.05],
       [55.7, 0.05],
@@ -125,12 +188,23 @@ export class AudioEngine {
       const o = ctx.createOscillator();
       o.type = 'sawtooth';
       o.frequency.value = f;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 180;
       const gn = ctx.createGain();
       gn.gain.value = g;
-      o.connect(lp).connect(gn).connect(this.amb);
+      o.connect(gn).connect(this.droneFilter);
+      o.start();
+    }
+    // Warm pad, silent except during the false shortcut's lie of safety.
+    this.padGain = ctx.createGain();
+    this.padGain.gain.value = 0;
+    this.padGain.connect(this.amb);
+    this.padGain.connect(this.reverbSend);
+    for (const f of [130.8, 164.8, 196, 261.6]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const gn = ctx.createGain();
+      gn.gain.value = 0.02;
+      o.connect(gn).connect(this.padGain);
       o.start();
     }
 
@@ -157,16 +231,25 @@ export class AudioEngine {
   }
 
   /** Continuous parameters, once per frame. */
-  update(dt: number, p: { speed: number; sliding: boolean; gust: number; playing: boolean }): void {
+  update(
+    dt: number,
+    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number },
+  ): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.windGain.gain.setTargetAtTime(0.18 + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006, t, 0.3);
+    const peace = !!p.peace;
+    const anx = p.anxiety ?? 0;
+    this.peace = peace;
+    this.windGain.gain.setTargetAtTime((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006, t, 0.3);
     this.slideGain.gain.setTargetAtTime(p.sliding ? 0.05 + p.speed * 0.006 : 0, t, 0.15);
     this.slideFilter.frequency.setTargetAtTime(500 + p.speed * 45, t, 0.2);
+    this.padGain.gain.setTargetAtTime(peace ? 1 : 0, t, peace ? 1.5 : 0.4);
+    this.droneGain.gain.setTargetAtTime(peace ? 0.25 : 1 + anx * 0.8, t, 0.8);
+    this.droneFilter.frequency.setTargetAtTime(180 + anx * 260, t, 1);
 
-    // Music box: a sparse, slightly detuned minor motif.
-    this.musicTimer -= dt;
-    if (this.musicTimer <= 0) {
+    // Music box: a sparse, slightly detuned minor motif. Silent during the shortcut; hurried when anxious.
+    this.musicTimer -= dt * (1 + anx * 0.8);
+    if (this.musicTimer <= 0 && !peace) {
       this.musicTimer = p.playing ? 2.6 + Math.random() * 3 : 1.8 + Math.random() * 1.5;
       const scale = [0, 3, 7, 10, 12, 15, 14, 8];
       const note = scale[Math.floor(Math.random() * scale.length)];
@@ -262,15 +345,15 @@ export class AudioEngine {
     this.thud(70, 0.3);
   }
 
-  private creak(): void {
+  private creak(pitch = 1, vol = 0.22): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const o = ctx.createOscillator();
     o.type = 'sawtooth';
     const t = ctx.currentTime;
-    o.frequency.setValueAtTime(70, t);
-    o.frequency.linearRampToValueAtTime(130, t + 0.6);
-    o.frequency.linearRampToValueAtTime(95, t + 1.3);
+    o.frequency.setValueAtTime(70 * pitch, t);
+    o.frequency.linearRampToValueAtTime(130 * pitch, t + 0.6);
+    o.frequency.linearRampToValueAtTime(95 * pitch, t + 1.3);
     const wob = ctx.createOscillator();
     wob.frequency.value = 23;
     const wg = ctx.createGain();
@@ -284,7 +367,7 @@ export class AudioEngine {
     o.connect(f).connect(g);
     g.connect(this.sfx);
     g.connect(this.reverbSend);
-    this.env(g, 0.22, 0.2, 1.2);
+    this.env(g, vol, 0.2, 1.2);
     o.start();
     wob.start();
     o.stop(t + 1.6);
@@ -336,12 +419,243 @@ export class AudioEngine {
     o.stop(t + 0.4);
   }
 
-  private impact(by: 'grass' | 'branch'): void {
+  private impact(by: CatchCause): void {
     this.thud(by === 'branch' ? 60 : 80, 0.5);
     // Heartbeat.
     setTimeout(() => this.thud(45, 0.4), 260);
     setTimeout(() => this.thud(42, 0.3), 480);
     if (by === 'grass') this.rustle(0.5);
+    if (by === 'water') this.splash(0.3);
+    if (by === 'fire') this.embersHiss(0.5);
+  }
+
+  // ---------- Stage 2: the Demon's elements ----------
+
+  /** A gust: band-passed noise swelling and sweeping upward. */
+  private howl(dur: number, vol: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 3;
+    const t = ctx.currentTime;
+    f.frequency.setValueAtTime(250, t);
+    f.frequency.exponentialRampToValueAtTime(900, t + dur * 0.6);
+    f.frequency.exponentialRampToValueAtTime(400, t + dur);
+    const g = ctx.createGain();
+    n.connect(f).connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.start(t, Math.random() * 1.2, dur + 0.1);
+  }
+
+  /** Water gathering: irregular low bubbles. */
+  private gurgle(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    for (let i = 0; i < 9; i++) {
+      setTimeout(() => {
+        const o = ctx.createOscillator();
+        const t = ctx.currentTime;
+        const f0 = 180 + Math.random() * 260;
+        o.frequency.setValueAtTime(f0, t);
+        o.frequency.exponentialRampToValueAtTime(f0 * 2.2, t + 0.06);
+        const g = ctx.createGain();
+        o.connect(g).connect(this.sfx);
+        this.env(g, 0.05, 0.004, 0.07);
+        o.start();
+        o.stop(t + 0.1);
+      }, i * 110 + Math.random() * 80);
+    }
+  }
+
+  private splash(vol: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 1200;
+    const g = ctx.createGain();
+    n.connect(f).connect(g).connect(this.sfx);
+    this.env(g, vol, 0.01, 0.5);
+    n.start(ctx.currentTime, Math.random(), 0.6);
+  }
+
+  /** The fountain erupting: a roar that settles into hiss. */
+  private fountain(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 1400;
+    f.Q.value = 0.5;
+    const g = ctx.createGain();
+    n.connect(f).connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    n.start(t, Math.random(), 1.5);
+    this.thud(65, 0.3);
+  }
+
+  /** Pale embers: a thin, cold crackle. */
+  private embersHiss(vol = 0.1): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    for (let i = 0; i < 12; i++) {
+      setTimeout(() => {
+        const n = this.noise();
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.frequency.value = 3000 + Math.random() * 4000;
+        f.Q.value = 8;
+        const g = ctx.createGain();
+        n.connect(f).connect(g).connect(this.sfx);
+        this.env(g, vol, 0.002, 0.04);
+        n.start(ctx.currentTime, Math.random() * 2, 0.06);
+      }, i * 90 + Math.random() * 60);
+    }
+  }
+
+  /** Cold fire catching: an inhaled whoosh with a glassy shimmer, not an explosion. */
+  private ignite(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(300, t);
+    f.frequency.exponentialRampToValueAtTime(2200, t + 0.4);
+    const g = ctx.createGain();
+    n.connect(f).connect(g).connect(this.sfx);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.28, t + 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+    n.start(t, Math.random(), 2);
+    for (const fr of [1318, 1975]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = fr * (1 + (Math.random() - 0.5) * 0.01);
+      const og = ctx.createGain();
+      o.connect(og);
+      og.connect(this.reverbSend);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(0.025, t + 0.3);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+      o.start();
+      o.stop(t + 2.3);
+    }
+  }
+
+  /** The flames sinking into ash. */
+  private ashCollapse(): void {
+    this.thud(48, 0.2);
+    this.embersHiss(0.06);
+  }
+
+  /** A clean dodge: a soft rising breath of relief. */
+  private relief(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(392, t);
+    o.frequency.exponentialRampToValueAtTime(587, t + 0.22);
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    this.env(g, 0.045, 0.02, 0.6);
+    o.start();
+    o.stop(t + 0.7);
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 2500;
+    const ng = ctx.createGain();
+    n.connect(f).connect(ng).connect(this.sfx);
+    this.env(ng, 0.04, 0.05, 0.25);
+    n.start(t, Math.random(), 0.35);
+  }
+
+  /** A single distant bell. */
+  private bell(freq: number, vol: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    for (const [mult, amp] of [
+      [1, 1],
+      [2.76, 0.4],
+      [5.4, 0.2],
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.frequency.value = freq * mult;
+      const g = ctx.createGain();
+      o.connect(g);
+      g.connect(this.reverbSend);
+      g.connect(this.amb);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol * amp, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 3.5 / mult + 0.5);
+      o.start();
+      o.stop(t + 4.2);
+    }
+  }
+
+  /** Lamps conferring: an electrical hum that rises and falls. */
+  private hum(): void {
+    if (!this.ctx || this.peace) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = 100;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 400;
+    f.Q.value = 4;
+    const g = ctx.createGain();
+    o.connect(f).connect(g).connect(this.sfx);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.04, t + 1);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+    o.start();
+    o.stop(t + 2.7);
+  }
+
+  /** The Demon's mood darkens: a long low swell. */
+  private phaseShift(level: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(41.2 / level, t);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 220;
+    const g = ctx.createGain();
+    o.connect(lp).connect(g);
+    g.connect(this.amb);
+    g.connect(this.reverbSend);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18, t + 2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 5);
+    o.start();
+    o.stop(t + 5.2);
+    this.bell(55, 0.15);
   }
 
   private grind(dur: number): void {

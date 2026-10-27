@@ -30,7 +30,7 @@ export const RUN = {
   stumbleSpeedFactor: 0.35,
   stumbleDuration: 1.05,
   /** Grace period after a hit. */
-  invulnerable: 1.3,
+  invulnerable: 1.7,
   /** How much uphill slope slows her (per unit of dh/dx). */
   slopeDrag: 26,
 };
@@ -60,6 +60,46 @@ export const CAMERA = {
   lookAhead: { x: 7.5, y: 1.0 },
   /** Fraction of lane offset the camera follows (keeps lanes readable). */
   laneFollow: 0.25,
+};
+
+/** The Demon's four elemental powers. */
+export const POWERS = {
+  grass: { cooldown: 5.5, windup: 1.3, footprint: 1.4, label: 'Grass' },
+  wind: { cooldown: 9, windup: 1.2, footprint: 8, label: 'Wind' },
+  water: { cooldown: 8, windup: 1.3, footprint: 1.7, label: 'Water' },
+  fire: { cooldown: 10, windup: 1.45, footprint: 3.1, label: 'Fire' },
+} as const;
+
+/**
+ * Rules every Demon (AI or human) must obey. Threat comes from timing and
+ * misdirection, never from unavoidable attacks.
+ */
+export const FAIRNESS = {
+  /** Seconds a player needs after seeing a warning to change lanes. */
+  reaction: 0.55,
+  /** Minimum visible warning before any attack can land. */
+  minWarning: 0.9,
+  /** Minimum clear metres between two blocking hazards in the same lane (no stun-locks). */
+  sameLaneGap: 9,
+  /** Metres around a hazard within which at least one lane must stay open. */
+  laneWindow: 6.5,
+  maxRange: 72,
+  maxActive: 4,
+  /** No new casts this long after she is caught (no stun-locks). */
+  graceAfterHit: 1.6,
+  /** The same power can't be used more than this many times in a row. */
+  maxRepeat: 2,
+  /** Metres before the finish where the Demon stops interfering. */
+  noCastBeforeFinish: 30,
+  /** Minimum gap between any two casts. */
+  castSpacing: 0.7,
+};
+
+export const MODE_TUNING = {
+  ai: { cooldownScale: 1.0 },
+  human: { cooldownScale: 1.0 },
+  /** 1v1: the Demon wins if it catches her this many times. */
+  versusCatchesToWin: 5,
 };
 
 export const COLORS = {

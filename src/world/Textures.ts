@@ -297,6 +297,130 @@ export function leafTexture(): THREE.CanvasTexture {
   return toTexture(c, true, false);
 }
 
+/**
+ * A painted night-sky panorama used as the reflection map for puddles:
+ * violet gradient, the moon, a band of tree silhouettes and a warm smear
+ * where the house would be.
+ */
+let envCache: THREE.Texture | null = null;
+export function nightEnvironment(): THREE.Texture {
+  if (envCache) return envCache;
+  const W = 1024;
+  const H = 512;
+  const rand = mulberry32(17);
+  const [c, g] = canvas(W, H);
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#05040b');
+  sky.addColorStop(0.42, '#2b2148');
+  sky.addColorStop(0.5, '#3a2c5c');
+  sky.addColorStop(0.52, '#0a0810');
+  sky.addColorStop(1, '#050407');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H);
+  // Moon.
+  const mx = W * 0.94;
+  const my = H * 0.4;
+  const mg = g.createRadialGradient(mx, my, 0, mx, my, 90);
+  mg.addColorStop(0, 'rgba(255,248,230,1)');
+  mg.addColorStop(0.25, 'rgba(240,230,210,0.9)');
+  mg.addColorStop(1, 'rgba(160,150,220,0)');
+  g.fillStyle = mg;
+  g.fillRect(mx - 90, my - 90, 180, 180);
+  // House glow.
+  const hg = g.createRadialGradient(W * 0.02, H * 0.47, 0, W * 0.02, H * 0.47, 60);
+  hg.addColorStop(0, 'rgba(255,170,90,0.8)');
+  hg.addColorStop(1, 'rgba(255,170,90,0)');
+  g.fillStyle = hg;
+  g.fillRect(0, H * 0.35, 120, 120);
+  // Trees.
+  g.strokeStyle = '#06050a';
+  for (let i = 0; i < 70; i++) {
+    const x = rand() * W;
+    const h = 60 + rand() * 120;
+    g.lineWidth = 2 + rand() * 4;
+    g.beginPath();
+    g.moveTo(x, H * 0.51);
+    g.lineTo(x + (rand() - 0.5) * 20, H * 0.51 - h);
+    g.stroke();
+    for (let b = 0; b < 4; b++) {
+      const by = H * 0.51 - h * (0.4 + rand() * 0.6);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(x, by);
+      g.lineTo(x + (rand() - 0.5) * 60, by - rand() * 40);
+      g.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  envCache = t;
+  return t;
+}
+
+/**
+ * Three figures that are not standing anywhere — seen only in reflections.
+ * Too tall, too thin, wrong at the neck. Drawn upside down (it's a reflection).
+ */
+let omenCache: THREE.Texture | null = null;
+export function omenFigures(): THREE.Texture {
+  if (omenCache) return omenCache;
+  const W = 256;
+  const H = 256;
+  const [c, g] = canvas(W, H);
+  g.translate(0, H);
+  g.scale(1, -1);
+  const figure = (cx: number, h: number, lean: number, horns: boolean) => {
+    g.save();
+    g.translate(cx, H * 0.95);
+    g.rotate(lean);
+    const grad = g.createLinearGradient(0, -h, 0, 0);
+    grad.addColorStop(0, 'rgba(0,0,0,0.95)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+    g.fillStyle = grad;
+    g.beginPath();
+    // Long coat.
+    g.moveTo(-30, 0);
+    g.quadraticCurveTo(-24, -h * 0.5, -17, -h * 0.72);
+    g.lineTo(17, -h * 0.72);
+    g.quadraticCurveTo(24, -h * 0.5, 30, 0);
+    g.fill();
+    // Neck — slightly too long.
+    g.fillRect(-5, -h * 0.86, 10, h * 0.15);
+    // Head, tilted.
+    g.beginPath();
+    g.ellipse(5, -h * 0.9, 13, 16, 0.5, 0, Math.PI * 2);
+    g.fill();
+    if (horns) {
+      g.beginPath();
+      g.moveTo(-2, -h * 0.95);
+      g.quadraticCurveTo(-10, -h * 1.02, -6, -h * 1.08);
+      g.lineTo(0, -h * 0.97);
+      g.moveTo(7, -h * 0.96);
+      g.quadraticCurveTo(15, -h * 1.03, 12, -h * 1.09);
+      g.lineTo(9, -h * 0.97);
+      g.fill();
+    }
+    // Arms too long, hanging past the knees.
+    g.lineWidth = 7;
+    g.strokeStyle = 'rgba(0,0,0,0.85)';
+    g.beginPath();
+    g.moveTo(-17, -h * 0.7);
+    g.lineTo(-28, -h * 0.22);
+    g.moveTo(17, -h * 0.7);
+    g.lineTo(28, -h * 0.2);
+    g.stroke();
+    g.restore();
+  };
+  figure(W * 0.2, 170, -0.04, false);
+  figure(W * 0.5, 205, 0.02, true);
+  figure(W * 0.8, 160, 0.06, false);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  omenCache = t;
+  return t;
+}
+
 /** Crack decal used to telegraph where roots will burst out. */
 export function crackTexture(seed = 5): THREE.CanvasTexture {
   const S = 256;

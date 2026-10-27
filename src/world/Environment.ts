@@ -24,14 +24,23 @@ export class Environment {
   readonly particles: Particles;
   readonly moonLight: THREE.DirectionalLight;
   readonly barkMaterial: THREE.MeshStandardMaterial;
+  readonly lamps: Streetlights;
   private grass: GrassField;
-  private lamps: Streetlights;
   private fill: THREE.PointLight;
   private time = 0;
   private gust = 0;
   private gustTarget = 0;
+  private peace = 0;
+  private peaceTarget = 0;
+  private anxiety = 0;
+  private anxiousFog = new THREE.Color(0x2c1424);
+  private treeUniforms = { uTime: { value: 0 }, uWind: { value: 0 } };
 
-  constructor(scene: THREE.Scene, bus: EventBus, keepClear: number[]) {
+  constructor(
+    private scene: THREE.Scene,
+    bus: EventBus,
+    keepClear: number[],
+  ) {
     scene.fog = new THREE.FogExp2(COLORS.fog, 0.0125);
     scene.background = new THREE.Color(COLORS.fog);
 
@@ -82,6 +91,32 @@ export class Environment {
     const barkTex = bark();
     barkTex.repeat.set(2, 1);
     this.barkMaterial = new THREE.MeshStandardMaterial({ map: barkTex, color: 0x5a5068, roughness: 0.95 });
+    // Trees bend with height when the wind rises (world-space, so every tree leans the same way).
+    const tu = this.treeUniforms;
+    this.barkMaterial.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, tu);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind;')
+        .replace(
+          '#include <project_vertex>',
+          `vec4 mvPosition = vec4(transformed, 1.0);
+           #ifdef USE_BATCHING
+             mvPosition = batchingMatrix * mvPosition;
+           #endif
+           #ifdef USE_INSTANCING
+             mvPosition = instanceMatrix * mvPosition;
+           #endif
+           vec4 wpos = modelMatrix * mvPosition;
+           float hk = max(wpos.y, 0.0);
+           hk = hk * hk * 0.0045;
+           float idle = sin(uTime * 0.8 + wpos.x * 0.21) * 0.1 + sin(uTime * 1.9 + wpos.z * 0.4) * 0.04;
+           wpos.x -= (uWind * 1.4 + idle) * hk;
+           wpos.z += sin(uTime * 0.6 + wpos.x * 0.13) * 0.06 * hk;
+           mvPosition = viewMatrix * wpos;
+           gl_Position = projectionMatrix * mvPosition;`,
+        );
+    };
+    this.barkMaterial.customProgramCacheKey = () => 'tree-sway';
     // Detailed variants line the path; lighter ones fill the depths of the park.
     const nearVariants: THREE.BufferGeometry[] = [];
     const farVariants: THREE.BufferGeometry[] = [];
@@ -163,18 +198,53 @@ export class Environment {
     this.gustTarget = strength;
   }
 
+  /** 0..1 — the false shortcut's calm: thinner fog, warm steady lamps. */
+  setPeace(p: number): void {
+    this.peaceTarget = p;
+  }
+
+  /** 0..1 — the Demon's anxiety: the night tightens around her. */
+  setAnxiety(a: number): void {
+    this.anxiety = a;
+  }
+
+  /** The house flares, briefly much brighter — it is closer than she thought. */
+  flareHouse(): void {
+    this.house.flare = 1;
+  }
+
+  reset(): void {
+    this.gust = this.gustTarget = 0;
+    this.peace = this.peaceTarget = 0;
+    this.anxiety = 0;
+    this.house.flare = 0;
+    this.lamps.reset();
+  }
+
   update(dt: number, camera: THREE.Camera, focus: THREE.Vector3): void {
     this.time += dt;
-    this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 2);
-    const ambientGust = 0.12 * Math.max(0, Math.sin(this.time * 0.37) * Math.sin(this.time * 0.13));
+    this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 2.5);
+    this.peace += (this.peaceTarget - this.peace) * Math.min(1, dt * 0.8);
+    const ambientGust = 0.12 * Math.max(0, Math.sin(this.time * 0.37) * Math.sin(this.time * 0.13)) * (1 - this.peace);
     const gust = this.gust + ambientGust;
     this.pavement.update(dt);
     this.sky.update(dt, camera);
     this.grass.update(dt, focus.x + 30, gust);
-    this.lamps.update(dt, focus.x);
+    this.lamps.flickerBoost = this.anxiety;
+    this.lamps.warmth = this.peace;
+    this.lamps.update(dt, focus);
+    this.house.glow = 1 + this.anxiety * 0.6 + this.peace * 0.3;
     this.house.update(dt);
     this.particles.gust = gust;
     this.particles.update(dt, focus.x);
+    this.treeUniforms.uTime.value = this.time;
+    this.treeUniforms.uWind.value = gust;
+
+    // Mood: the shortcut clears the air; anxiety thickens and reddens it.
+    const fog = this.scene.fog as THREE.FogExp2;
+    fog.density = 0.0125 * (1 - this.peace * 0.45) * (1 + this.anxiety * 0.18);
+    fog.color.setHex(COLORS.fog).lerp(this.anxiousFog, this.anxiety * 0.45);
+    (this.scene.background as THREE.Color).copy(fog.color);
 
     // Moon shadow follows the Visitor so shadows stay crisp where it matters.
     this.moonLight.target.position.set(focus.x + 6, focus.y, focus.z);

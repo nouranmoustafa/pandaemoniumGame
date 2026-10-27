@@ -43,6 +43,11 @@ export class House {
   private windows: WindowLight[] = [];
   private time = 0;
   private doorGlow: THREE.Sprite;
+  /** Window brightness multiplier (the Demon's mood). */
+  glow = 1;
+  /** 0..1 — a brief surge of light, decaying. */
+  flare = 0;
+  private aura!: THREE.Sprite;
   /** 0..1 — how far the front door has opened (ending sequence). */
   doorOpen = 0;
   private doorPivot = new THREE.Group();
@@ -219,6 +224,7 @@ export class House {
       new THREE.SpriteMaterial({ map: glowTexture('rgba(255,150,70,0.22)'), blending: THREE.AdditiveBlending, fog: false, depthWrite: false, transparent: true }),
     );
     aura.position.set(18, baseY + 13, 0);
+    this.aura = aura;
     aura.scale.set(90, 70, 1);
     this.group.add(aura);
 
@@ -241,8 +247,12 @@ export class House {
     for (const w of this.windows) {
       const flicker = 0.85 + 0.15 * Math.sin(this.time * 7 + w.phase) * Math.sin(this.time * 2.3 + w.phase * 2);
       const mat = w.mesh.material as THREE.MeshBasicMaterial;
-      mat.color.setHex(COLORS.amber).multiplyScalar(w.base * flicker * 1.6);
+      mat.color.setHex(COLORS.amber).multiplyScalar(w.base * flicker * 1.6 * (this.glow + this.flare * 1.5));
     }
+    this.flare = Math.max(0, this.flare - dt * 0.35);
+    const auraK = this.glow + this.flare * 2;
+    this.aura.scale.set(90 * (0.8 + auraK * 0.2), 70 * (0.8 + auraK * 0.2), 1);
+    (this.aura.material as THREE.SpriteMaterial).opacity = Math.min(1, 0.7 + this.flare * 0.6 + (this.glow - 1) * 0.5);
     this.doorPivot.rotation.y = -this.doorOpen * 1.6;
     (this.doorGlow.material as THREE.SpriteMaterial).opacity = this.doorOpen;
   }

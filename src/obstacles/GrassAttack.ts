@@ -57,7 +57,10 @@ export class GrassAttack extends Obstacle {
     const z = LANES[lane];
     sharedBlade ??= bladeGeometry(0.075);
     sharedCrack ??= crackTexture(3);
-    sharedRootMat ??= new THREE.MeshStandardMaterial({ color: 0x5a3a34, roughness: 0.45, metalness: 0.05, emissive: 0x3a060c });
+    if (!sharedRootMat) {
+      sharedRootMat = new THREE.MeshStandardMaterial({ color: 0x5a3a34, roughness: 0.45, metalness: 0.05, emissive: 0x3a060c });
+      sharedRootMat.userData.shared = true;
+    }
 
     this.bladeMat = new THREE.MeshStandardMaterial({
       color: 0x4c6a4a,
@@ -164,7 +167,7 @@ export class GrassAttack extends Obstacle {
     (this.crack.material as THREE.MeshBasicMaterial).opacity = crackOpacity * (0.75 + 0.25 * Math.sin(this.time * 14));
     this.crackPivot.position.y = pav.heightAt(this.x, laneZ) + 0.04;
     this.crackPivot.rotation.z = Math.atan(pav.slopeAt(this.x, laneZ));
-    this.bladeMat.emissive.setRGB(0.11 * agitation, 0.008 * agitation, 0.015 * agitation);
+    this.bladeMat.emissive.setRGB(0.07 * agitation, 0.006 * agitation, 0.01 * agitation);
 
     // --- Blades ---
     const t = this.time;
@@ -237,6 +240,15 @@ export class GrassAttack extends Obstacle {
         const w = Math.sin(t * 9 + k * 7 + ph) * 0.07 * k * (this.caught ? 0.4 : 1);
         pts[i].x += w;
         pts[i].z += Math.cos(t * 7 + k * 5 + ph) * 0.06 * k;
+      }
+      if (this.caught && this.state === 'holding') {
+        // The last few joints coil around the ankle instead of just touching it.
+        const coil = 3;
+        for (let j = 0; j < coil; j++) {
+          const i = ROOT_SEGS - coil + 1 + j;
+          const a = t * 6 + ph + j * 2.1;
+          pts[i].set(this.ankle.x + Math.cos(a) * 0.09, this.ankle.y + 0.03 + j * 0.05, this.ankle.z + Math.sin(a) * 0.09);
+        }
       }
       root.sync(this.caught && this.state === 'holding' ? 1.15 : 1);
     }

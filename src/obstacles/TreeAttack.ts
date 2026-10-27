@@ -32,7 +32,8 @@ export class TreeAttack extends Obstacle {
   private limbMat: THREE.MeshStandardMaterial;
   private topLocal = new THREE.Vector3();
   private baseLive = new THREE.Vector3();
-  private static AXIS_X = new THREE.Vector3(1, 0, 0);
+  private trunkMat: THREE.MeshStandardMaterial;
+  private bend = { value: 0 };
   private time = 0;
   private seed: number;
   private tip = new THREE.Vector3();
@@ -69,6 +70,23 @@ export class TreeAttack extends Obstacle {
     this.limbMat = (bark as THREE.MeshStandardMaterial).clone();
     this.limbMat.color.setHex(0x86748a);
     this.limbMat.emissive.setHex(0x000000);
+    // The trunk deforms: displacement grows with the square of height, so it bends like wood.
+    this.trunkMat = (bark as THREE.MeshStandardMaterial).clone();
+    const bendHeight = { value: Math.max(1, limbY) };
+    const bend = this.bend;
+    this.trunkMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uBend = bend;
+      shader.uniforms.uBendH = bendHeight;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uBend; uniform float uBendH;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+           float bh = clamp(position.y / uBendH, 0.0, 1.6);
+           transformed.z += uBend * bh * bh * uBendH;`,
+        );
+    };
+    this.trunkMat.customProgramCacheKey = () => 'tree-bend';
 
     // Trunk: a hunched, twisting column that leans over the path.
     this.trunkPivot.position.set(x, 0, trunkZ);
@@ -83,7 +101,7 @@ export class TreeAttack extends Obstacle {
       top.clone().add(new THREE.Vector3(-0.6, 2.4, 0.4)),
       top.clone().add(new THREE.Vector3(-0.2, 4.2, -0.6)),
     ];
-    const trunk = new THREE.Mesh(taperedTube(new THREE.CatmullRomCurve3(trunkPts), 24, 9, 0.62, 0.06), bark);
+    const trunk = new THREE.Mesh(taperedTube(new THREE.CatmullRomCurve3(trunkPts), 24, 9, 0.62, 0.06), this.trunkMat);
     trunk.castShadow = trunk.receiveShadow = true;
     this.trunkPivot.add(trunk);
     // Gnarled static limbs for silhouette.
@@ -91,7 +109,7 @@ export class TreeAttack extends Obstacle {
       const from = trunkPts[3 + (i % 2)].clone();
       const pts = [from, from.clone().add(new THREE.Vector3((rand() - 0.5) * 3, 1.5 + rand() * 2, -1 - rand() * 2))];
       pts.push(pts[1].clone().add(new THREE.Vector3((rand() - 0.5) * 2, 0.5 + rand(), -rand())));
-      const m = new THREE.Mesh(taperedTube(new THREE.CatmullRomCurve3(pts), 10, 6, 0.18, 0.01), bark);
+      const m = new THREE.Mesh(taperedTube(new THREE.CatmullRomCurve3(pts), 10, 6, 0.18, 0.01), this.trunkMat);
       m.castShadow = true;
       this.trunkPivot.add(m);
     }
@@ -148,7 +166,7 @@ export class TreeAttack extends Obstacle {
 
   override reset(): void {
     super.reset();
-    this.trunkPivot.rotation.set(0, 0, 0);
+    this.bend.value = 0;
   }
 
   private get farLaneZ(): number {
@@ -253,12 +271,14 @@ export class TreeAttack extends Obstacle {
     }
 
     // --- Pose trunk, limb and claws ---
-    this.trunkPivot.rotation.x = lean;
+    // The trunk bends (quadratically with height) rather than tipping like a post.
+    this.bend.value = lean;
     // Veins smoulder while it winds up and burn at the strike.
     const veins = Math.max(danger, eye > 0.1 ? eye * 0.6 : 0);
-    this.limbMat.emissive.setRGB(0.12 * veins, 0.012 * veins, 0.02 * veins);
+    this.limbMat.emissive.setRGB(0.07 * veins, 0.008 * veins, 0.012 * veins);
     // The limb grows out of the trunk, so it follows the trunk's lean.
-    this.baseLive.copy(this.topLocal).applyAxisAngle(TreeAttack.AXIS_X, lean).add(this.trunkPivot.position);
+    this.baseLive.copy(this.topLocal).add(this.trunkPivot.position);
+    this.baseLive.z += lean * this.topLocal.y;
     for (const s of this.eyes) {
       const flick = 0.85 + 0.15 * Math.sin(t * 17 + this.seed);
       (s.material as THREE.SpriteMaterial).opacity = eye * flick;

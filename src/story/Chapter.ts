@@ -7,6 +7,7 @@ import type { UI } from '../ui/UI';
 
 export interface ChapterServices {
   scene: THREE.Scene;
+  canvas: HTMLCanvasElement;
   camera: ChaseCamera;
   input: Input;
   bus: EventBus;

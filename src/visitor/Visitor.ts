@@ -65,9 +65,12 @@ export class Visitor {
       slope: c.slope,
       roll: c.roll,
       arriving: c.mode === 'arrive',
+      windLean: c.windLean,
+      headwind: c.headwind,
+      slip: c.slip,
     });
     this.avatar.applyPose(pose);
-    this.avatar.updateSecondary(dt, { velocity: this.velocity, accel: this.accel, wind: 0, slide: c.slideBlend });
+    this.avatar.updateSecondary(dt, { velocity: this.velocity, accel: this.accel, wind: Math.min(1, Math.abs(c.windLean) + c.headwind), slide: c.slideBlend });
 
     // Phone glow pulses like a notification while she runs.
     const target = c.mode === 'idle' ? 1 : 0.55 + 0.45 * Math.max(0, Math.sin(performance.now() * 0.004));

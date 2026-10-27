@@ -39,6 +39,7 @@ export class Pavement {
   private colCenter: Float32Array;
   private deformFrom: number;
   private deformTo: number;
+  private bumps: Array<{ x0: number; length: number; height: number; amp: number; target: number }> = [];
   private wasDeformed = false;
 
   constructor(private bus: EventBus) {
@@ -141,7 +142,8 @@ export class Pavement {
     this.rise = this.slide = 0;
     this.riseTarget = this.slideTarget = 0;
     this.time = 0;
-    this.applyHeights(this.deformFrom, this.deformTo);
+    this.bumps.length = 0;
+    this.applyHeights(0, this.cols - 1);
     this.wasDeformed = false;
   }
 
@@ -165,17 +167,65 @@ export class Pavement {
     return this.rise > 0.001 || this.slide > 0.001;
   }
 
+  /**
+   * The sarcastic pavement: tilt a stretch of path ahead uphill, gradually.
+   * Separate from the scripted hill/slide, which stays a directed event.
+   */
+  raiseIncline(x0: number, length: number, height: number): void {
+    this.bumps.push({ x0, length, height, amp: 0, target: 1 });
+  }
+
+  /** Let every incline sink back down. */
+  lowerInclines(): void {
+    for (const b of this.bumps) b.target = 0;
+  }
+
+  get inclineActive(): boolean {
+    return this.bumps.some((b) => b.target > 0);
+  }
+
+  private bumpHeight(x: number): number {
+    let h = 0;
+    for (const b of this.bumps) {
+      if (b.amp <= 0.0001 || x < b.x0 || x > b.x0 + b.length) continue;
+      const t = (x - b.x0) / b.length;
+      // A long, gentle climb, then a short drop back to level.
+      const shape = t < 0.75 ? smoothstep(0, 0.75, t) : 1 - smoothstep(0.75, 1, t);
+      h += shape * b.height * b.amp;
+    }
+    return h;
+  }
+
   update(dt: number): void {
     this.time += dt;
     this.rise = damp(this.rise, this.riseTarget, 0.9, dt);
     this.slide = damp(this.slide, this.slideTarget, 1.3, dt);
+    let dirty = false;
     if (this.active) {
-      this.applyHeights(this.deformFrom, this.deformTo);
+      this.applyHeights(this.deformFrom, this.deformTo, false);
       this.wasDeformed = true;
+      dirty = true;
     } else if (this.wasDeformed) {
-      this.applyHeights(this.deformFrom, this.deformTo);
+      this.applyHeights(this.deformFrom, this.deformTo, false);
       this.wasDeformed = false;
+      dirty = true;
     }
+    for (let i = this.bumps.length - 1; i >= 0; i--) {
+      const b = this.bumps[i];
+      const prev = b.amp;
+      b.amp = damp(b.amp, b.target, b.target > b.amp ? 0.9 : 1.6, dt);
+      if (b.target === 0 && b.amp < 0.002) b.amp = 0;
+      if (prev !== b.amp) {
+        this.applyHeights(this.colOf(b.x0 - 1), this.colOf(b.x0 + b.length + 1), false);
+        dirty = true;
+      }
+      if (b.target === 0 && b.amp === 0) this.bumps.splice(i, 1);
+    }
+    if (dirty) this.finishHeights();
+  }
+
+  private colOf(x: number): number {
+    return clamp(Math.round((x - X0) / STEP), 0, this.cols - 1);
   }
 
   /** Large-scale shape of the hill/slide (no waves) along the course. */
@@ -192,6 +242,12 @@ export class Pavement {
   }
 
   heightAt(x: number, z: number): number {
+    const b = this.bumps.length ? this.bumpHeight(x) : 0;
+    return this.sectionHeight(x, z) + b;
+  }
+
+  /** The scripted hill/slide section. */
+  private sectionHeight(x: number, z: number): number {
     const { pavementStart: P0, pavementEnd: P1, hillCrest: crest } = COURSE;
     if (x < P0 || x > P1 || !this.active) return 0;
     const t = this.time;
@@ -230,7 +286,7 @@ export class Pavement {
     return (this.heightAt(x + e, z) - this.heightAt(x - e, z)) / (2 * e);
   }
 
-  private applyHeights(from: number, to: number): void {
+  private applyHeights(from: number, to: number, finish = true): void {
     const rows = SURFACE_ROWS + 2;
     const pos = this.geo.getAttribute('position') as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
@@ -256,6 +312,10 @@ export class Pavement {
     }
     pos.needsUpdate = true;
     uvAttr.needsUpdate = true;
+    if (finish) this.finishHeights();
+  }
+
+  private finishHeights(): void {
     this.geo.computeVertexNormals();
     this.geo.computeBoundingSphere();
   }

@@ -1,7 +1,8 @@
 import './styles.css';
+import { MODE_TUNING } from '../config';
 
 export interface UIHandlers {
-  onPlay: () => void;
+  onPlay: (mode: 'single' | 'versus') => void;
   onRestart: () => void;
   onResume: () => void;
   onQuit: () => void;
@@ -24,6 +25,7 @@ export class UI {
   private subtitle = el('div', 'subtitle');
   private effort = el('div', 'effort', '<i></i>');
   private hurt = el('div', 'hurt');
+  private dodge = el('div', 'dodge-flash');
   private fade = el('div', 'fade');
   private pause = el('div', 'card');
   private end = el('div', 'card');
@@ -35,18 +37,23 @@ export class UI {
       <h1>The House<br><span class="want">Wants</span> You</h1>
       <p class="tag">You matched with someone lovely. They asked to meet in the old park, after dark.</p>`;
     const menu = el('div', 'menu');
-    const play = el('button', '', 'PLAY');
+    const play = el('button', '', 'PLAY ALONE');
+    const versus = el('button', '', 'LOCAL 1V1');
     const how = el('button', '', 'HOW TO PLAY');
-    play.addEventListener('click', handlers.onPlay);
+    play.addEventListener('click', () => handlers.onPlay('single'));
+    versus.addEventListener('click', () => handlers.onPlay('versus'));
     how.addEventListener('click', () => this.howto.classList.toggle('open'));
-    menu.append(play, how);
+    menu.append(play, versus, how);
     this.howto.innerHTML = `
       <p>She runs on her own. The park would rather she didn't.</p>
-      <p><kbd>↑</kbd><kbd>↓</kbd> change lanes — dodge the grass and the branches.</p>
+      <p><kbd>↑</kbd><kbd>↓</kbd> change lanes — dodge whatever the park sends.</p>
       <p><kbd>SPACE</kbd> <em>tap</em> repeatedly to run faster. Stop, and she tires back to a jog.</p>
-      <p>Watch for the warnings: thrashing grass, red cracks, a tree lifting its arm.</p>
+      <p>Every attack is announced: thrashing grass, red cracks, a lifted limb, gathering wind, bubbling water, pale embers. Steer against a gust to brace.</p>
+      <p class="ht-head">Local 1v1</p>
+      <p>Player one is the Visitor, on the keyboard. Player two is the <em>Demon</em>, with the <kbd>MOUSE</kbd>: choose Grass, Wind, Water or Fire, then click the lit path ahead of her. Right-click cancels.</p>
+      <p>The Demon wins if she is caught ${MODE_TUNING.versusCatchesToWin} times before the house. It may not close every lane, strike without warning, or kick her while she's down.</p>
       <p><kbd>ESC</kbd> pause.</p>`;
-    this.title.append(menu, this.howto, el('div', 'stage-mark', 'STAGE I — THE PARK'));
+    this.title.append(menu, this.howto, el('div', 'stage-mark', 'STAGE II — THE DEMON'));
 
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
     const pm = el('div', 'menu');
@@ -67,7 +74,7 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.hurt, this.hint, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
+    this.root.append(this.hurt, this.dodge, this.hint, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -97,6 +104,22 @@ export class UI {
     this.subtitleTimer = duration;
   }
 
+  /** Hint lines adapt to the mode (1v1 adds the Demon's control). */
+  setMode(mode: 'single' | 'versus'): void {
+    this.hint.innerHTML =
+      mode === 'versus'
+        ? 'VISITOR · UP / DOWN — <span>DODGE</span> · TAP SPACE — <span>RUN</span><br>DEMON · MOUSE — <span>CHOOSE A POWER, CLICK THE PATH</span>'
+        : 'UP / DOWN — <span>DODGE</span><br>TAP SPACE — <span>RUN</span>';
+    this.hint.classList.toggle('wide', mode === 'versus');
+  }
+
+  /** A brief pale breath at the edges: a clean escape. */
+  flashDodge(): void {
+    this.dodge.classList.remove('flash');
+    void this.dodge.offsetWidth;
+    this.dodge.classList.add('flash');
+  }
+
   flashHurt(): void {
     this.hurt.classList.add('flash');
     setTimeout(() => this.hurt.classList.remove('flash'), 90);
@@ -113,9 +136,10 @@ export class UI {
     (this.effort.firstElementChild as HTMLElement).style.transform = `scaleX(${v.toFixed(3)})`;
   }
 
-  showEnd(caught: number, time: number, line: string): void {
+  showEnd(caught: number, time: number, line: string, winner?: 'demon' | 'visitor'): void {
+    const title = winner === 'demon' ? 'The Demon Wins' : winner === 'visitor' ? 'The Visitor Wins' : 'The Door Is Open';
     this.end.innerHTML = `
-      <h2>The Door Is Open</h2>
+      <h2>${title}</h2>
       <p class="line">${line}</p>
       <p class="stats">CAUGHT ${caught}&nbsp;&nbsp;·&nbsp;&nbsp;${time.toFixed(1)}s</p>`;
     const m = el('div', 'menu');

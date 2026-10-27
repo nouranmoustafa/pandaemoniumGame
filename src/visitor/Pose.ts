@@ -52,6 +52,16 @@ export class Pose {
     return this;
   }
 
+  /** Blend a single joint toward a rotation by weight w. */
+  blendJoint(j: JointName, x: number, y: number, z: number, w: number): this {
+    if (w <= 0) return this;
+    const i = JOINT_INDEX[j] * 3;
+    this.rot[i] += (x - this.rot[i]) * w;
+    this.rot[i + 1] += (y - this.rot[i + 1]) * w;
+    this.rot[i + 2] += (z - this.rot[i + 2]) * w;
+    return this;
+  }
+
   clear(): this {
     this.rot.fill(0);
     this.root.fill(0);
