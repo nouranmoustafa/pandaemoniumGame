@@ -28,6 +28,9 @@ export const JOINTS = [
 
 export type JointName = (typeof JOINTS)[number];
 
+/** Loosely curled, at rest. */
+const RELAXED_HANDS = [0.32, 0.12, 0.25, 0, 0.32, 0.12, 0.25, 0];
+
 export class Pose {
   /** Packed [x, y, z] per joint, in JOINTS order. */
   readonly rot = new Float32Array(JOINTS.length * 3);
@@ -35,6 +38,26 @@ export class Pose {
   readonly root = new Float32Array(3);
   /** Root rotation offset (pitch, yaw, roll). */
   readonly rootRot = new Float32Array(3);
+  /** Hands: [curl, spread, thumb, point] for L then R (0 = open, 1 = closed). */
+  readonly hand = new Float32Array(RELAXED_HANDS);
+
+  setHand(side: 'L' | 'R', curl: number, spread = 0.12, thumb = 0.25, point = 0): this {
+    const o = side === 'L' ? 0 : 4;
+    this.hand[o] = curl;
+    this.hand[o + 1] = spread;
+    this.hand[o + 2] = thumb;
+    this.hand[o + 3] = point;
+    return this;
+  }
+
+  /** Blend one hand toward a shape by weight w. */
+  blendHand(side: 'L' | 'R', curl: number, spread: number, thumb: number, point: number, w: number): this {
+    if (w <= 0) return this;
+    const o = side === 'L' ? 0 : 4;
+    const t = [curl, spread, thumb, point];
+    for (let i = 0; i < 4; i++) this.hand[o + i] += (t[i] - this.hand[o + i]) * Math.min(1, w);
+    return this;
+  }
 
   set(j: JointName, x: number, y = 0, z = 0): this {
     const i = JOINT_INDEX[j] * 3;
@@ -66,6 +89,7 @@ export class Pose {
     this.rot.fill(0);
     this.root.fill(0);
     this.rootRot.fill(0);
+    this.hand.set(RELAXED_HANDS);
     return this;
   }
 
@@ -73,6 +97,7 @@ export class Pose {
     this.rot.set(p.rot);
     this.root.set(p.root);
     this.rootRot.set(p.rootRot);
+    this.hand.set(p.hand);
     return this;
   }
 
@@ -85,6 +110,7 @@ export class Pose {
       this.root[i] += (other.root[i] - this.root[i]) * w;
       this.rootRot[i] += (other.rootRot[i] - this.rootRot[i]) * w;
     }
+    for (let i = 0; i < 8; i++) this.hand[i] += (other.hand[i] - this.hand[i]) * w;
     return this;
   }
 

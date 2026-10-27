@@ -26,7 +26,13 @@ export interface AnimInput {
   headwind?: number;
   /** Loss of footing on wet stone 0..1. */
   slip?: number;
+  /** How she stands still: the Stage 2 phone pose, or a character idle. */
+  idleStyle?: IdleStyle;
+  /** 0..1 — hunched, quick, glancing walk. */
+  nervous?: number;
 }
+
+export type IdleStyle = 'phone' | 'open' | 'composed' | 'animated' | 'reserved';
 
 const TAU = Math.PI * 2;
 
@@ -40,6 +46,7 @@ export class VisitorAnimator {
   readonly pose = new Pose();
   private target = new Pose();
   private idle = new Pose();
+  private walk = new Pose();
   private run = new Pose();
   private stumble = new Pose();
   private slidePose = new Pose();
@@ -66,13 +73,20 @@ export class VisitorAnimator {
 
     // Gait intensity tracks actual speed, not input — animation stays in sync.
     const I = clamp(invLerp(RUN.jogSpeed * 0.6, RUN.sprintSpeed, a.speed), 0, 1);
-    const moving = smoothstep(0.25, 2.2, a.speed) * (1 - a.slide);
-    const cycleLength = lerp(2.2, 6.4, smoothstep(0, RUN.sprintSpeed, a.speed));
+    const moving = smoothstep(0.08, 0.6, a.speed) * (1 - a.slide);
+    // Below a jog she walks; both gaits share one phase so the change is seamless.
+    const runW = smoothstep(2.3, 3.8, a.speed);
+    const runCycle = lerp(2.2, 6.4, smoothstep(0, RUN.sprintSpeed, a.speed));
+    const cycleLength = lerp(this.walkCycleLength(a.speed), runCycle, runW);
     if (a.slide < 0.95) this.phase += (a.speed / cycleLength) * TAU * dt;
     this.detectSteps(moving);
 
-    this.buildIdle(t);
+    this.buildIdle(t, a.idleStyle ?? 'phone');
     this.buildRun(this.phase, I, t, a);
+    if (runW < 1) {
+      this.buildWalk(this.phase, a.speed, a.nervous ?? 0, t);
+      this.run.blend(this.walk, 1 - runW);
+    }
     this.target.copy(this.idle).blend(this.run, moving);
 
     if (a.slide > 0) {
@@ -169,7 +183,123 @@ export class VisitorAnimator {
     this.lastPhase = this.phase;
   }
 
-  private buildIdle(t: number): void {
+  private walkAmp(speed: number): number {
+    return clamp(0.2 + speed * 0.13, 0.22, 0.5);
+  }
+
+  /** Metres per full gait cycle when walking, matched to the leg swing so feet plant. */
+  private walkCycleLength(speed: number): number {
+    // Stance sweeps the foot 2·L·sin(A) in 62% of the cycle (L ≈ 0.89 m at world scale).
+    return (2 * 0.89 * Math.sin(this.walkAmp(speed))) / 0.62;
+  }
+
+  /**
+   * Walking: a linear stance sweep (so the planted foot keeps pace with the
+   * ground), a knee-lifted swing, heel-toe roll, pelvis turn and drop, and
+   * counter-swinging arms. "Nervous" hunches, tightens and quickens it.
+   */
+  private buildWalk(ph: number, speed: number, nervous: number, t: number): void {
+    const p = this.walk.clear();
+    const A = this.walkAmp(speed);
+    const stanceFrac = 0.62;
+    const leg = (phase: number) => {
+      const u = (((phase % TAU) + TAU) % TAU) / TAU;
+      if (u < stanceFrac) {
+        const s = u / stanceFrac;
+        // Forward (−A) at heel strike, back (+A) at toe-off.
+        const thigh = lerp(-A, A, s);
+        const knee = 0.06 + (s < 0.35 ? 0.16 * Math.sin((s / 0.35) * Math.PI) : 0) + 0.35 * smoothstep(0.75, 1, s);
+        const toeOff = smoothstep(0.7, 1, s) * 0.35;
+        const heel = (1 - smoothstep(0, 0.15, s)) * -0.15;
+        return { thigh, knee, ankle: -(thigh + knee) + toeOff + heel, stance: 1 - Math.abs(s - 0.5) * 2 };
+      }
+      const s = (u - stanceFrac) / (1 - stanceFrac);
+      const thigh = lerp(A, -A * 1.05, 0.5 - 0.5 * Math.cos(s * Math.PI));
+      const knee = 0.3 + (0.62 + nervous * 0.12) * Math.sin(Math.min(1, s * 1.25) * Math.PI);
+      return { thigh, knee, ankle: -(thigh + knee) * 0.55 - 0.05, stance: 0 };
+    };
+    const L = leg(ph);
+    const R = leg(ph + Math.PI);
+    p.set('thighL', L.thigh, 0, 0.02);
+    p.set('kneeL', L.knee, 0, 0);
+    p.set('ankleL', L.ankle, 0, 0);
+    p.set('thighR', R.thigh, 0, -0.02);
+    p.set('kneeR', R.knee, 0, 0);
+    p.set('ankleR', R.ankle, 0, 0);
+    const s = Math.sin(ph);
+    const c = Math.cos(ph);
+    // Pelvis turns with the forward leg and drops on the swing side.
+    p.set('hips', 0, -s * 0.09, c * 0.035);
+    p.set('spine', 0.03 + nervous * 0.12, s * 0.04, -c * 0.02);
+    p.set('chest', nervous * 0.08, s * 0.07, 0);
+    p.set('neck', -0.02 + nervous * 0.05, 0, 0);
+    const glance = nervous * smoothstep(0.55, 0.9, noise1(t * 0.35, 11));
+    p.set('head', -0.02 - nervous * 0.08, glance * 0.7 * Math.sign(noise1(t * 0.07, 3) || 1), 0);
+    // Arms counter-swing; nervous arms stay close, hands curled.
+    const armAmp = lerp(0.42, 0.18, nervous) * (A / 0.4);
+    p.set('shoulderL', s * armAmp + 0.02, 0, lerp(0.08, 0.04, nervous));
+    p.set('elbowL', -0.22 - Math.max(0, -s) * 0.25 - nervous * 0.5, 0, 0);
+    p.set('shoulderR', -s * armAmp + 0.02, 0, -lerp(0.08, 0.04, nervous));
+    p.set('elbowR', -0.22 - Math.max(0, s) * 0.25 - nervous * 0.5, 0, 0);
+    p.setHand('L', 0.35 + nervous * 0.4);
+    p.setHand('R', 0.35 + nervous * 0.4);
+    // The body vaults over the stance leg.
+    const stanceThigh = L.stance > R.stance ? L.thigh : R.thigh;
+    p.root[1] = -0.78 * (1 - Math.cos(stanceThigh)) - 0.012 - nervous * 0.02;
+  }
+
+  /** Standing idles: breathing, weight shifts and each woman's own bearing. */
+  private buildCharacterIdle(t: number, style: IdleStyle): void {
+    const p = this.idle.clear();
+    const breath = Math.sin(t * 1.6);
+    const shift = smoothstep(-0.4, 0.4, noise1(t * 0.12, style.length)) * 2 - 1; // which hip carries her weight
+    const settle = style === 'animated' ? 1.6 : style === 'composed' ? 0.5 : 1;
+    p.set('hips', 0, shift * 0.05 * settle, shift * 0.045 * settle);
+    p.set('spine', 0.02 + breath * 0.01, -shift * 0.02, -shift * 0.04 * settle);
+    p.set('chest', 0.015 + breath * 0.018, 0, -shift * 0.015);
+    p.set('neck', 0.04, 0, 0);
+    p.set('head', 0.04, 0, shift * 0.03);
+    // Standing leg straight, the other relaxed with its knee forward.
+    const w = 0.5 + shift * 0.5; // 1 = weight on the left
+    p.set('thighL', -0.02 - (1 - w) * 0.1, 0.04, 0.02 - shift * 0.03);
+    p.set('kneeL', 0.03 + (1 - w) * 0.22, 0, 0);
+    p.set('ankleL', -0.01 - (1 - w) * 0.12, 0, 0);
+    p.set('thighR', -0.02 - w * 0.1, -0.04, -0.02 - shift * 0.03);
+    p.set('kneeR', 0.03 + w * 0.22, 0, 0);
+    p.set('ankleR', -0.01 - w * 0.12, 0, 0);
+    p.root[0] = shift * 0.03 * settle;
+    p.root[1] = -0.01 - 0.01 * Math.abs(shift) + breath * 0.003;
+    p.set('shoulderL', 0.04 + breath * 0.01, 0, 0.09);
+    p.set('elbowL', -0.18, 0, 0);
+    p.set('shoulderR', 0.04 + breath * 0.01, 0, -0.09);
+    p.set('elbowR', -0.18, 0, 0);
+    switch (style) {
+      case 'composed':
+        // Tall and still, hands loosely clasped in front.
+        p.add('spine', -0.03, 0, 0);
+        p.set('shoulderL', -0.22, 0.1, -0.12).set('elbowL', -0.75, 0.6, 0).set('wristL', 0, 0.3, 0);
+        p.set('shoulderR', -0.2, -0.1, 0.12).set('elbowR', -0.8, -0.6, 0).set('wristR', 0, -0.3, 0);
+        p.setHand('L', 0.45, 0.05, 0.4).setHand('R', 0.55, 0.05, 0.5);
+        break;
+      case 'animated':
+        // A hand on her hip; the other is free to talk with.
+        p.set('shoulderL', -0.1, 0.2, 0.55).set('elbowL', -1.5, 0.7, 0).set('wristL', 0.2, 0, 0.3);
+        p.setHand('L', 0.6, 0.05, 0.3);
+        break;
+      case 'reserved':
+        // Arms close, one hand holding the opposite elbow.
+        p.add('neck', 0.08, 0, 0).add('head', 0.06, 0, 0);
+        p.set('shoulderR', -0.35, -0.25, 0.18).set('elbowR', -1.75, -0.4, 0);
+        p.set('shoulderL', -0.05, 0, 0.05).set('elbowL', -0.6, 0.3, 0);
+        p.setHand('R', 0.6).setHand('L', 0.4);
+        break;
+      default:
+        p.setHand('L', 0.3).setHand('R', 0.3);
+    }
+  }
+
+  private buildIdle(t: number, style: IdleStyle): void {
+    if (style !== 'phone') return this.buildCharacterIdle(t, style);
     const p = this.idle.clear();
     const breath = Math.sin(t * 1.7);
     const sway = Math.sin(t * 0.55);

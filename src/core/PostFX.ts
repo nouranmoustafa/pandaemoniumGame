@@ -12,12 +12,13 @@ const GradeShader = {
     uVignette: { value: 1.0 },
     uHurt: { value: 0 },
     uGrain: { value: 0.06 },
+    uWarm: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uHurt; uniform float uGrain;
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uHurt; uniform float uGrain; uniform float uWarm;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main() {
@@ -33,6 +34,8 @@ const GradeShader = {
       // Cool shadows, warm highlights.
       float l = dot(c, vec3(0.299, 0.587, 0.114));
       c = mix(c * vec3(0.92, 0.95, 1.08), c * vec3(1.06, 1.0, 0.92), smoothstep(0.25, 0.9, l));
+      // Dusk: warm, slightly lifted shadows; the park takes it away.
+      c = mix(c, c * vec3(1.08, 0.98, 0.86) + vec3(0.012, 0.006, 0.0), uWarm);
       // Vignette.
       float v = smoothstep(0.85, 0.25, r * uVignette);
       c *= mix(0.35, 1.0, v);
@@ -59,6 +62,11 @@ export class PostFX {
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
+  }
+
+  /** 0..1 — the warm evening grade. */
+  setWarmth(w: number): void {
+    this.grade.uniforms.uWarm.value = w;
   }
 
   pulseHurt(): void {

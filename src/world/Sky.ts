@@ -13,6 +13,9 @@ export class Sky {
   private clouds: THREE.Mesh[] = [];
   private moon: THREE.Mesh;
   private time = 0;
+  private skyMat: THREE.ShaderMaterial;
+  /** 0..1 — twilight: a last band of sunset low over the town (−X). */
+  warmth = 0;
 
   constructor() {
     const skyMat = new THREE.ShaderMaterial({
@@ -25,6 +28,7 @@ export class Sky {
         glow: { value: new THREE.Color(0x6b5a9a) },
         moonDir: { value: this.moonDir },
         fogColor: { value: new THREE.Color(COLORS.fog) },
+        warmth: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
@@ -34,7 +38,7 @@ export class Sky {
           gl_Position = p.xyww;
         }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 top; uniform vec3 horizon; uniform vec3 glow; uniform vec3 moonDir; uniform vec3 fogColor;
+        uniform vec3 top; uniform vec3 horizon; uniform vec3 glow; uniform vec3 moonDir; uniform vec3 fogColor; uniform float warmth;
         varying vec3 vDir;
         void main() {
           float h = clamp(vDir.y, -0.2, 1.0);
@@ -43,11 +47,17 @@ export class Sky {
           c += glow * pow(m, 18.0) * 0.9 + glow * pow(m, 4.0) * 0.18;
           // Faint sickly band just above the horizon.
           c += vec3(0.08, 0.04, 0.12) * exp(-abs(h - 0.06) * 9.0);
+          // Twilight: the sky still holds the sunset behind the town.
+          float west = pow(max(dot(normalize(vec3(vDir.x, 0.0, vDir.z)), vec3(-0.94, 0.0, 0.34)), 0.0), 2.0);
+          vec3 dusk = mix(vec3(0.42, 0.24, 0.3), vec3(0.95, 0.52, 0.32), west * exp(-max(h, 0.0) * 7.0));
+          dusk = mix(dusk, vec3(0.12, 0.12, 0.26), smoothstep(0.05, 0.7, h));
+          c = mix(c, dusk, warmth);
           // Melt into the fog at the horizon so the ground has no hard edge.
           c = mix(fogColor, c, smoothstep(-0.01, 0.1, h));
           gl_FragColor = vec4(c, 1.0);
         }`,
     });
+    this.skyMat = skyMat;
     const dome = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), skyMat);
     dome.renderOrder = -10;
     dome.frustumCulled = false;
@@ -129,9 +139,15 @@ export class Sky {
     return t;
   }
 
+  /** Keep the horizon melting into the current fog. */
+  setFog(c: THREE.Color): void {
+    this.skyMat.uniforms.fogColor.value.copy(c);
+  }
+
   update(dt: number, camera: THREE.Camera): void {
     this.time += dt;
     this.group.position.copy(camera.position);
+    this.skyMat.uniforms.warmth.value = this.warmth;
     this.moon.lookAt(camera.position);
     for (const cl of this.clouds) {
       cl.userData.yaw += cl.userData.speed * dt;

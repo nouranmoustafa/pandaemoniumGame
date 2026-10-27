@@ -34,6 +34,9 @@ export interface GameEvents {
   'trick:lights': Record<string, never>;
   'trick:shortcut': { active: boolean };
   'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor' };
+  /** Prologue story beats and its sound cues (audio stays decoupled from the script). */
+  'prologue:beat': { beat: string };
+  'prologue:sound': { id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' };
 }
 
 type Handler<T> = (payload: T) => void;

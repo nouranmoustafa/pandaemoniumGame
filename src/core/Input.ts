@@ -1,4 +1,5 @@
-export type InputAction = 'up' | 'down' | 'sprint' | 'pause' | 'restart' | 'confirm';
+/** Escape is its own action: it pauses in the chase, and is held to skip the intro. */
+export type InputAction = 'up' | 'down' | 'sprint' | 'pause' | 'escape' | 'restart' | 'confirm';
 
 const KEYMAP: Record<string, InputAction> = {
   ArrowUp: 'up',
@@ -6,7 +7,7 @@ const KEYMAP: Record<string, InputAction> = {
   ArrowDown: 'down',
   KeyS: 'down',
   Space: 'sprint',
-  Escape: 'pause',
+  Escape: 'escape',
   KeyP: 'pause',
   KeyR: 'restart',
   Enter: 'confirm',
@@ -20,6 +21,12 @@ export class Input {
   private pressed = new Set<InputAction>();
   private held = new Set<InputAction>();
   private listeners: Array<(a: InputAction) => void> = [];
+  private anyListeners: Array<(code: string) => void> = [];
+
+  /** Any physical key (the title's "press any key"). */
+  onAnyKey(fn: (code: string) => void): void {
+    this.anyListeners.push(fn);
+  }
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', this.onDown);
@@ -29,6 +36,7 @@ export class Input {
 
   private onDown = (e: KeyboardEvent) => {
     const action = KEYMAP[e.code];
+    if (!e.repeat) for (const l of this.anyListeners) l(e.code);
     if (!action) return;
     e.preventDefault();
     if (e.repeat) return;

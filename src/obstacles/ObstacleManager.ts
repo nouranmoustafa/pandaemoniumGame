@@ -31,6 +31,11 @@ export class ObstacleManager {
   }
 
   reset(): void {
-    for (const o of this.obstacles) o.reset();
+    // Hidden until their first update poses them (unposed tendrils sit at the world origin,
+    // right on the prologue's path); update() decides visibility from then on.
+    for (const o of this.obstacles) {
+      o.reset();
+      o.group.visible = false;
+    }
   }
 }

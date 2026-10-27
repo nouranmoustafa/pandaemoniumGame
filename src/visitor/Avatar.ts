@@ -13,10 +13,9 @@ export interface SecondaryMotion {
 }
 
 /**
- * Anything that can visually represent the Visitor. Stage 1 ships with a
- * procedural, hand-built avatar; a rigged GLTF character can implement the
- * same interface by mapping Pose joints onto its bones (or by driving its own
- * AnimationMixer from the same state) without any gameplay code changing.
+ * Anything that can visually represent the Visitor. Stage 3 ships a
+ * generated, skinned character (characters/GeneratedCharacter); a supplied
+ * rigged GLB implements the same contract (characters/gltf/GltfAvatar).
  */
 export interface VisitorAvatar {
   readonly object: THREE.Object3D;

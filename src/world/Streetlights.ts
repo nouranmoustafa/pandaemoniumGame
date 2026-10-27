@@ -18,6 +18,8 @@ interface Lamp {
   lean: number;
   leanTarget: number;
   leanT: number;
+  /** Seconds of a forced stutter (a scripted flicker). */
+  stutter: number;
 }
 
 const LAMP_COLOR = new THREE.Color(0xffc27a);
@@ -146,6 +148,7 @@ export class Streetlights {
         lean: 0,
         leanTarget: 0,
         leanT: -1,
+        stutter: 0,
       });
     }
 
@@ -174,8 +177,16 @@ export class Streetlights {
     return false;
   }
 
+  /** The lamp nearest x stutters, briefly. */
+  stutter(x: number, seconds = 1.1): void {
+    let best: Lamp | null = null;
+    for (const l of this.lamps) if (!best || Math.abs(l.pos.x - x) < Math.abs(best.pos.x - x)) best = l;
+    if (best) best.stutter = seconds;
+  }
+
   reset(): void {
     for (const l of this.lamps) {
+      l.stutter = 0;
       l.lean = l.leanTarget = 0;
       l.leanT = -1;
       l.root.rotation.set(0, 0, 0);
@@ -201,6 +212,10 @@ export class Streetlights {
         f = burst ? (Math.sin(t * 43 + lamp.phase) > 0 ? 1 : 0.15) : 0.95;
       } else {
         f = 0.92 + 0.08 * Math.sin(t * 9 + lamp.phase) * (1 - this.warmth);
+      }
+      if (lamp.stutter > 0) {
+        lamp.stutter -= dt;
+        f = Math.sin(t * 31) > 0.2 || lamp.stutter < 0.15 ? 0.08 : 0.9;
       }
       lamp.level = f * (1 + this.warmth * 0.25);
       (lamp.glow.material as THREE.SpriteMaterial).opacity = 0.5 * lamp.level;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CAMERA, COURSE, RUN } from '../config';
 import { clamp, damp, lerp, noise1, smoothstep } from '../core/math';
 
-export type CameraMode = 'title' | 'chase' | 'arrive';
+export type CameraMode = 'title' | 'chase' | 'arrive' | 'cinematic';
 
 export interface CameraSubject {
   position: THREE.Vector3;
@@ -31,6 +31,11 @@ export class ChaseCamera {
   private lag = 0;
   private titleT = 0;
   private arriveT = 0;
+  private cineFov = CAMERA.fov;
+  /** Cinematic → chase blend in progress. */
+  private handoff: { t: number; dur: number; pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null;
+  private outPos = new THREE.Vector3();
+  private outLook = new THREE.Vector3();
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, aspect, 0.1, 2500);
@@ -43,15 +48,52 @@ export class ChaseCamera {
   setMode(m: CameraMode): void {
     this.mode = m;
     if (m === 'arrive') this.arriveT = 0;
+    if (m !== 'chase') this.handoff = null;
   }
 
-  /** Place the camera exactly at its chase position (used on restart). */
-  snap(s: CameraSubject): void {
+  /** A directed shot: the cinematic director owns the lens this frame. */
+  setCinematic(pos: THREE.Vector3, look: THREE.Vector3, fov: number): void {
+    this.mode = 'cinematic';
+    this.handoff = null;
+    this.pos.copy(pos);
+    this.look.copy(look);
+    this.cineFov = fov;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
+    this.apply();
+  }
+
+  /**
+   * Hand the lens from the cinematic shot to the chase camera: the chase
+   * framing is computed live and the camera eases into it from wherever the
+   * last shot left it. No cut.
+   */
+  beginHandoff(s: CameraSubject, duration: number): void {
+    const from = { pos: this.pos.clone(), look: this.look.clone(), fov: this.camera.fov };
+    this.mode = 'chase';
     this.groundY = s.position.y;
     this.lag = 0;
     this.computeChase(s);
     this.pos.copy(this.desiredPos);
     this.look.copy(this.desiredLook);
+    this.handoff = { t: 0, dur: duration, ...from };
+  }
+
+  get handingOff(): boolean {
+    return this.handoff !== null;
+  }
+
+  /** Place the camera exactly at its chase position (used on restart). */
+  snap(s: CameraSubject): void {
+    this.mode = 'chase';
+    this.handoff = null;
+    this.groundY = s.position.y;
+    this.lag = 0;
+    this.computeChase(s);
+    this.pos.copy(this.desiredPos);
+    this.look.copy(this.desiredLook);
+    this.outPos.copy(this.pos);
+    this.outLook.copy(this.look);
     this.apply();
   }
 
@@ -74,6 +116,13 @@ export class ChaseCamera {
     // Ground height is smoothed separately so the hill doesn't jolt the frame.
     this.groundY = damp(this.groundY, s.position.y, 2.6, dt);
 
+    if (this.mode === 'cinematic') {
+      this.camera.fov = this.cineFov;
+      this.camera.updateProjectionMatrix();
+      this.trauma = Math.max(0, this.trauma - dt * 1.6);
+      this.apply();
+      return;
+    }
     if (this.mode === 'title') {
       this.titleT += dt;
       const t = this.titleT;
@@ -107,14 +156,33 @@ export class ChaseCamera {
     }
 
     const targetFov = CAMERA.fov + smoothstep(RUN.jogSpeed, 20, s.speed) * 7 + s.slide * 3;
-    this.camera.fov = damp(this.camera.fov, targetFov, 2, dt);
+    if (this.handoff) {
+      const h = this.handoff;
+      h.t += dt;
+      // Ease in-out with a soft start, so the move is felt rather than seen.
+      const u = Math.min(1, h.t / h.dur);
+      const k = u * u * u * (u * (u * 6 - 15) + 10);
+      this.camera.fov = lerp(h.fov, targetFov, k);
+      this.outPos.lerpVectors(h.pos, this.pos, k);
+      this.outLook.lerpVectors(h.look, this.look, k);
+      if (u >= 1) this.handoff = null;
+    } else {
+      this.camera.fov = damp(this.camera.fov, targetFov, 2, dt);
+      this.outPos.copy(this.pos);
+      this.outLook.copy(this.look);
+    }
     this.camera.updateProjectionMatrix();
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
     this.apply();
   }
 
   private apply(): void {
-    this.camera.position.copy(this.pos);
+    const handing = this.mode === 'chase' || this.mode === 'title' || this.mode === 'arrive';
+    if (!handing) {
+      this.outPos.copy(this.pos);
+      this.outLook.copy(this.look);
+    }
+    this.camera.position.copy(this.outPos);
     const sh = this.trauma * this.trauma;
     if (sh > 0) {
       const t = this.time * 30;
@@ -122,7 +190,7 @@ export class ChaseCamera {
       this.camera.position.y += noise1(t, 2) * sh * 0.5;
       this.camera.position.z += noise1(t, 3) * sh * 0.3;
     }
-    this.camera.lookAt(this.look);
+    this.camera.lookAt(this.outLook);
   }
 
   resize(aspect: number): void {

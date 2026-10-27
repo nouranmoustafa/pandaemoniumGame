@@ -7,6 +7,8 @@ export interface UIHandlers {
   onResume: () => void;
   onQuit: () => void;
   onToggleMute: () => boolean;
+  /** Title: the "press any key" prompt was clicked. */
+  onRevealMenu: () => void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] {
@@ -27,6 +29,11 @@ export class UI {
   private hurt = el('div', 'hurt');
   private dodge = el('div', 'dodge-flash');
   private fade = el('div', 'fade');
+  private press = el('div', 'press-any', 'PRESS ANY KEY');
+  private menu!: HTMLDivElement;
+  private skip = el('div', 'skip-intro', 'HOLD ESC — SKIP INTRO<i></i>');
+  private barTop = el('div', 'letterbox top');
+  private barBottom = el('div', 'letterbox bottom');
   private pause = el('div', 'card');
   private end = el('div', 'card');
   private subtitleTimer = 0;
@@ -37,6 +44,8 @@ export class UI {
       <h1>The House<br><span class="want">Wants</span> You</h1>
       <p class="tag">You matched with someone lovely. They asked to meet in the old park, after dark.</p>`;
     const menu = el('div', 'menu');
+    this.menu = menu;
+    this.press.addEventListener('click', () => handlers.onRevealMenu());
     const play = el('button', '', 'PLAY ALONE');
     const versus = el('button', '', 'LOCAL 1V1');
     const how = el('button', '', 'HOW TO PLAY');
@@ -52,8 +61,8 @@ export class UI {
       <p class="ht-head">Local 1v1</p>
       <p>Player one is the Visitor, on the keyboard. Player two is the <em>Demon</em>, with the <kbd>MOUSE</kbd>: choose Grass, Wind, Water or Fire, then click the lit path ahead of her. Right-click cancels.</p>
       <p>The Demon wins if she is caught ${MODE_TUNING.versusCatchesToWin} times before the house. It may not close every lane, strike without warning, or kick her while she's down.</p>
-      <p><kbd>ESC</kbd> pause.</p>`;
-    this.title.append(menu, this.howto, el('div', 'stage-mark', 'STAGE II — THE DEMON'));
+      <p><kbd>ESC</kbd> or <kbd>P</kbd> pause. During the opening, <em>hold</em> <kbd>ESC</kbd> to skip it.</p>`;
+    this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE III — THE PROLOGUE'));
 
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
     const pm = el('div', 'menu');
@@ -74,7 +83,7 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.hurt, this.dodge, this.hint, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
+    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -87,6 +96,25 @@ export class UI {
   showTitle(v: boolean): void {
     this.title.classList.toggle('hidden', !v);
     if (!v) this.howto.classList.remove('open');
+  }
+
+  /** Title: first a quiet "press any key", then the menu. */
+  setTitleStage(stage: 'press' | 'menu'): void {
+    this.press.classList.toggle('hidden', stage !== 'press');
+    this.menu.classList.toggle('hidden', stage !== 'menu');
+    if (stage === 'press') this.howto.classList.remove('open');
+  }
+
+  /** "HOLD ESC — SKIP INTRO", with a meter that fills while it's held. */
+  showSkip(v: boolean, progress: number): void {
+    this.skip.classList.toggle('show', v);
+    (this.skip.lastElementChild as HTMLElement).style.transform = `scaleX(${Math.min(1, progress).toFixed(3)})`;
+  }
+
+  /** Cinematic bars for the prologue; they withdraw when she's handed to the player. */
+  setLetterbox(v: boolean): void {
+    this.barTop.classList.toggle('show', v);
+    this.barBottom.classList.toggle('show', v);
   }
 
   showHint(v: boolean): void {
@@ -148,7 +176,7 @@ export class UI {
     again.addEventListener('click', this.endHandlers.onRestart);
     quit.addEventListener('click', this.endHandlers.onQuit);
     m.append(again, quit);
-    const hint = el('p', 'stats', 'END OF STAGE I &nbsp;·&nbsp; PRESS R TO RUN AGAIN');
+    const hint = el('p', 'stats', 'THE PARK — TO BE CONTINUED &nbsp;·&nbsp; PRESS R TO RUN AGAIN');
     hint.style.marginTop = '2.4em';
     hint.style.fontSize = '0.75rem';
     this.end.append(m, hint);

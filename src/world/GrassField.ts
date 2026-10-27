@@ -15,6 +15,10 @@ export class GrassField {
     uCenter: { value: 0 },
     uSpan: { value: 150 },
     uGust: { value: 0 },
+    /** No grass on the plaza before this X; short, tended lawn just after it. */
+    uClearX: { value: -22.5 },
+    /** A wave travelling through the blades against the wind: (x, strength). */
+    uRipple: { value: new THREE.Vector2(0, 0) },
   };
 
   constructor(count = 20000) {
@@ -33,7 +37,7 @@ export class GrassField {
         .replace(
           '#include <common>',
           `#include <common>
-           uniform float uTime; uniform float uCenter; uniform float uSpan; uniform float uGust;`,
+           uniform float uTime; uniform float uCenter; uniform float uSpan; uniform float uGust; uniform float uClearX; uniform vec2 uRipple;`,
         )
         .replace(
           '#include <project_vertex>',
@@ -42,10 +46,18 @@ export class GrassField {
           float ix = gIm[3][0];
           float wx = mod(ix - uCenter + uSpan * 0.5, uSpan) + uCenter - uSpan * 0.5;
           gIm[3][0] = wx;
-          vec4 mvPosition = gIm * vec4(transformed, 1.0);
+          // Tended lawn by the gate, growing wild the deeper into the park.
+          float keep = smoothstep(uClearX, uClearX + 0.6, wx);
+          float wild = mix(0.35, 1.0, smoothstep(uClearX + 1.0, uClearX + 17.0, wx));
+          vec3 tr = transformed;
+          tr.y *= keep * wild;
+          tr.xz *= max(keep, 0.001);
+          vec4 mvPosition = gIm * vec4(tr, 1.0);
           float h = clamp(position.y, 0.0, 1.0);
           float w = sin(uTime * 1.6 + wx * 0.31 + gIm[3][2] * 0.17) * 0.6 + sin(uTime * 3.7 + wx * 1.3) * 0.18;
-          mvPosition.x += (w * 0.22 + uGust) * h * h;
+          float rip = uRipple.y * exp(-pow((wx - uRipple.x) / 2.2, 2.0));
+          mvPosition.x += (w * 0.22 + uGust - rip * 0.9) * h * h;
+          mvPosition.y -= rip * 0.25 * h;
           mvPosition.z += w * 0.1 * h * h;
           mvPosition = modelViewMatrix * mvPosition;
           gl_Position = projectionMatrix * mvPosition;
@@ -81,6 +93,10 @@ export class GrassField {
       this.mesh.setColorAt(i, color);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  ripple(x: number, amp: number): void {
+    this.uniforms.uRipple.value.set(x, amp);
   }
 
   update(dt: number, centerX: number, gust: number): void {

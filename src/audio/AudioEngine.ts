@@ -25,6 +25,15 @@ export class AudioEngine {
   private droneFilter!: BiquadFilterNode;
   private padGain!: GainNode;
   private peace = false;
+  // --- Prologue: the town at dusk ---
+  private cityGain!: GainNode;
+  private murmurGain!: GainNode;
+  private duskPadGain!: GainNode;
+  /** 0..1 — how much of the ordinary evening is still audible. */
+  private city = 0;
+  private carTimer = 4;
+  private duskTimer = 1;
+  private duskStep = 0;
 
   constructor(bus: EventBus) {
     bus.on('visitor:step', ({ speed }) => this.footstep(speed));
@@ -52,6 +61,7 @@ export class AudioEngine {
     bus.on('trick:sign', () => this.creak(1.8, 0.12));
     bus.on('trick:bench', () => this.bell(130.8, 0.1));
     bus.on('trick:lights', () => this.hum());
+    bus.on('prologue:sound', ({ id }) => this.prologueSound(id));
     bus.on('trick:shortcut', ({ active }) => {
       if (!active) {
         this.thud(40, 0.45);
@@ -208,6 +218,72 @@ export class AudioEngine {
       o.start();
     }
 
+    // The town: a traffic hum that breathes, and indistinct friendly talk.
+    this.cityGain = ctx.createGain();
+    this.cityGain.gain.value = 0;
+    this.cityGain.connect(this.amb);
+    const traffic = this.noise(true);
+    const tlp = ctx.createBiquadFilter();
+    tlp.type = 'lowpass';
+    tlp.frequency.value = 260;
+    const tg = ctx.createGain();
+    tg.gain.value = 0.5;
+    traffic.connect(tlp).connect(tg).connect(this.cityGain);
+    traffic.start();
+    const tl = ctx.createOscillator();
+    tl.frequency.value = 0.09;
+    const tlg = ctx.createGain();
+    tlg.gain.value = 0.18;
+    tl.connect(tlg).connect(tg.gain);
+    tl.start();
+    this.murmurGain = ctx.createGain();
+    this.murmurGain.gain.value = 0;
+    this.murmurGain.connect(this.amb);
+    this.murmurGain.connect(this.reverbSend);
+    for (const [fq, rate] of [
+      [520, 4.3],
+      [880, 5.1],
+      [1350, 3.7],
+    ] as const) {
+      // Formant-band noise gated at a syllable rate: talk without words.
+      const n = this.noise(true);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = fq;
+      bp.Q.value = 3;
+      const vg = ctx.createGain();
+      vg.gain.value = 0;
+      const syl = ctx.createOscillator();
+      syl.type = 'triangle';
+      syl.frequency.value = rate;
+      const sg = ctx.createGain();
+      sg.gain.value = 0.5;
+      syl.connect(sg).connect(vg.gain);
+      n.connect(bp).connect(vg).connect(this.murmurGain);
+      n.start(0, Math.random() * 2);
+      syl.start();
+    }
+    // A subdued, slightly melancholy pad: A minor with an added ninth.
+    this.duskPadGain = ctx.createGain();
+    this.duskPadGain.gain.value = 0;
+    this.duskPadGain.connect(this.amb);
+    this.duskPadGain.connect(this.reverbSend);
+    for (const fq of [110, 164.8, 246.9, 261.6]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = fq;
+      const gn = ctx.createGain();
+      gn.gain.value = 0.016;
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 0.2 + Math.random() * 0.2;
+      const vibG = ctx.createGain();
+      vibG.gain.value = 0.6;
+      vib.connect(vibG).connect(o.frequency);
+      o.connect(gn).connect(this.duskPadGain);
+      o.start();
+      vib.start();
+    }
+
     // Slide scrape (silent until sliding).
     const scrape = this.noise(true);
     this.slideFilter = ctx.createBiquadFilter();
@@ -233,23 +309,46 @@ export class AudioEngine {
   /** Continuous parameters, once per frame. */
   update(
     dt: number,
-    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number },
+    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number; city?: number; prologue?: boolean },
   ): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const peace = !!p.peace;
     const anx = p.anxiety ?? 0;
+    const city = p.city ?? 0;
+    this.city = city;
     this.peace = peace;
-    this.windGain.gain.setTargetAtTime((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006, t, 0.3);
+    // The town recedes as she walks in; the wind and the drone take its place.
+    this.cityGain.gain.setTargetAtTime(city * 0.55, t, 0.8);
+    this.murmurGain.gain.setTargetAtTime(Math.pow(city, 2) * 0.07, t, 0.8);
+    this.duskPadGain.gain.setTargetAtTime(p.prologue ? Math.pow(city, 1.5) * 0.9 : 0, t, 1.5);
+    this.windGain.gain.setTargetAtTime(((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006) * (1 - city * 0.55), t, 0.3);
     this.slideGain.gain.setTargetAtTime(p.sliding ? 0.05 + p.speed * 0.006 : 0, t, 0.15);
     this.slideFilter.frequency.setTargetAtTime(500 + p.speed * 45, t, 0.2);
     this.padGain.gain.setTargetAtTime(peace ? 1 : 0, t, peace ? 1.5 : 0.4);
-    this.droneGain.gain.setTargetAtTime(peace ? 0.25 : 1 + anx * 0.8, t, 0.8);
+    this.droneGain.gain.setTargetAtTime((peace ? 0.25 : 1 + anx * 0.8) * (1 - city * 0.95), t, 0.8);
+    if (city > 0.35) {
+      this.carTimer -= dt;
+      if (this.carTimer <= 0) {
+        this.carTimer = 5 + Math.random() * 7;
+        this.carPass(city);
+      }
+    }
+    if (p.prologue && city > 0.25) {
+      // A few soft low notes, unhurried.
+      this.duskTimer -= dt;
+      if (this.duskTimer <= 0) {
+        const motif = [57, 60, 64, 62, 60, 59, 57, 52];
+        const m = motif[this.duskStep++ % motif.length];
+        this.duskTimer = 2.4 + (this.duskStep % 4 === 0 ? 1.6 : 0);
+        this.pluck(440 * Math.pow(2, (m - 69) / 12), 0.05 * city);
+      }
+    }
     this.droneFilter.frequency.setTargetAtTime(180 + anx * 260, t, 1);
 
     // Music box: a sparse, slightly detuned minor motif. Silent during the shortcut; hurried when anxious.
     this.musicTimer -= dt * (1 + anx * 0.8);
-    if (this.musicTimer <= 0 && !peace) {
+    if (this.musicTimer <= 0 && !peace && city < 0.5) {
       this.musicTimer = p.playing ? 2.6 + Math.random() * 3 : 1.8 + Math.random() * 1.5;
       const scale = [0, 3, 7, 10, 12, 15, 14, 8];
       const note = scale[Math.floor(Math.random() * scale.length)];
@@ -296,7 +395,9 @@ export class AudioEngine {
     f.Q.value = 1.2;
     const g = ctx.createGain();
     n.connect(f).connect(g).connect(this.sfx);
-    this.env(g, 0.12 + Math.min(speed, 13) * 0.012, 0.004, 0.09);
+    // In the quiet of the park her own steps become noticeable.
+    const quiet = 1 + (1 - this.city) * 0.35 - this.city * 0.25;
+    this.env(g, (0.12 + Math.min(speed, 13) * 0.012) * quiet, 0.004, 0.09);
     n.start(ctx.currentTime, Math.random() * 2, 0.15);
     // Heel thud.
     const o = ctx.createOscillator();
@@ -307,6 +408,141 @@ export class AudioEngine {
     this.env(og, 0.12, 0.003, 0.08);
     o.start();
     o.stop(ctx.currentTime + 0.12);
+  }
+
+  /** A car going by somewhere behind the houses. */
+  private carPass(level: number): void {
+    const ctx = this.ctx!;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.4;
+    const t = ctx.currentTime;
+    f.frequency.setValueAtTime(220, t);
+    f.frequency.linearRampToValueAtTime(520, t + 1.8);
+    f.frequency.linearRampToValueAtTime(260, t + 3.6);
+    const g = ctx.createGain();
+    n.connect(f).connect(g).connect(this.amb);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09 * level, t + 1.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 3.8);
+    n.start(t, Math.random(), 4);
+  }
+
+  private prologueSound(id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send'): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    switch (id) {
+      case 'buzz': {
+        // A phone vibrating in a coat pocket: two short, muffled pulses.
+        for (const at of [0, 0.42]) {
+          const o = ctx.createOscillator();
+          o.type = 'square';
+          o.frequency.value = 170;
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = 380;
+          const g = ctx.createGain();
+          o.connect(lp).connect(g).connect(this.sfx);
+          g.gain.setValueAtTime(0.0001, t + at);
+          g.gain.exponentialRampToValueAtTime(0.1, t + at + 0.03);
+          g.gain.setValueAtTime(0.1, t + at + 0.26);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.32);
+          o.start(t + at);
+          o.stop(t + at + 0.35);
+        }
+        break;
+      }
+      case 'notify':
+      case 'send': {
+        // Discreet: two soft sine notes.
+        const notes = id === 'notify' ? [1318.5, 1760] : [880, 1174.7];
+        notes.forEach((fq, i) => {
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          o.frequency.value = fq;
+          const g = ctx.createGain();
+          o.connect(g);
+          g.connect(this.sfx);
+          g.connect(this.reverbSend);
+          const s0 = t + i * 0.11;
+          g.gain.setValueAtTime(0.0001, s0);
+          g.gain.exponentialRampToValueAtTime(id === 'notify' ? 0.045 : 0.03, s0 + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, s0 + 0.5);
+          o.start(s0);
+          o.stop(s0 + 0.55);
+        });
+        break;
+      }
+      case 'swing':
+        // A distant swing — chain and pivot, twice, as if pushed.
+        this.creak(1.7, 0.09);
+        this.creakAt(1.25, 1.55, 0.07);
+        break;
+      case 'branch': {
+        const n = this.noise();
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 1800;
+        const g = ctx.createGain();
+        n.connect(hp).connect(g);
+        g.connect(this.sfx);
+        g.connect(this.reverbSend);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.14, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+        n.start(t, Math.random(), 0.3);
+        this.creakAt(0.15, 2.4, 0.05);
+        break;
+      }
+      case 'flicker': {
+        // The lamp's ballast stutters.
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 118;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 900;
+        bp.Q.value = 3;
+        const g = ctx.createGain();
+        o.connect(bp).connect(g).connect(this.sfx);
+        g.gain.setValueAtTime(0.0001, t);
+        for (let i = 0; i < 6; i++) g.gain.setValueAtTime(i % 2 ? 0.0001 : 0.03, t + i * 0.13 + Math.random() * 0.05);
+        g.gain.setValueAtTime(0.0001, t + 0.9);
+        o.start(t);
+        o.stop(t + 1);
+        break;
+      }
+      case 'grass':
+        this.rustle(2.2);
+        this.whoosh();
+        break;
+    }
+  }
+
+  /** A creak scheduled on the audio clock (no timers). */
+  private creakAt(delay: number, pitch: number, vol: number): void {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    const t = ctx.currentTime + delay;
+    o.frequency.setValueAtTime(70 * pitch, t);
+    o.frequency.linearRampToValueAtTime(130 * pitch, t + 0.6);
+    o.frequency.linearRampToValueAtTime(95 * pitch, t + 1.3);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 700;
+    f.Q.value = 6;
+    const g = ctx.createGain();
+    o.connect(f).connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    o.start(t);
+    o.stop(t + 1.6);
   }
 
   private rustle(dur: number): void {

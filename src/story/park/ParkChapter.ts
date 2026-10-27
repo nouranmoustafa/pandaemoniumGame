@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { COURSE, MODE_TUNING } from '../../config';
-import { damp } from '../../core/math';
+import { CinematicDirector, type ShotFrame } from '../../camera/CinematicDirector';
+import { damp, smoothstep } from '../../core/math';
 import { DemonAbilitySystem } from '../../demon/abilities/DemonAbilitySystem';
 import { AIDemonDirector } from '../../demon/AIDemonDirector';
 import type { DemonContext, DemonDirector } from '../../demon/DemonDirector';
@@ -17,8 +18,10 @@ import { DemonPanel } from '../../ui/DemonPanel';
 import { Visitor } from '../../visitor/Visitor';
 import { Environment } from '../../world/Environment';
 import { Inscriptions } from '../../world/Inscriptions';
+import { ENTRANCE } from '../../world/ParkEntrance';
 import { TargetingOverlay } from '../../world/TargetingOverlay';
 import type { Chapter, ChapterServices } from '../Chapter';
+import { HANDOFF_AT, Prologue } from '../prologue/Prologue';
 import { CourseDirector } from './CourseDirector';
 import { PARK_COURSE } from './course';
 
@@ -31,6 +34,10 @@ export type GameMode = 'single' | 'versus';
  * Both modes share everything (world, hazards, collisions, fairness rules,
  * tricks); only the Demon director differs: AI in single player, the second
  * player's mouse in local 1v1.
+ *
+ * Stage 3: the chapter opens on the prologue (friends, the match, the walk
+ * in), played identically in both modes. The Demon's systems don't run at
+ * all until the chase begins; the prologue hands her over at the gate.
  */
 export class ParkChapter implements Chapter {
   readonly id = 'park' as const;
@@ -45,8 +52,15 @@ export class ParkChapter implements Chapter {
   readonly ai: AIDemonDirector;
   readonly human: HumanDemonDirector;
   readonly panel: DemonPanel;
+  readonly prologue: Prologue;
+  readonly cine = new CinematicDirector();
   mode: GameMode = 'single';
   complete = false;
+  /** False during the title backdrop and the prologue. */
+  chaseActive = false;
+  private titleFrame: ShotFrame | null = null;
+  /** Called once, when the prologue hands her to the player. */
+  onPrologueHandoff: () => void = () => {};
 
   private course: CourseDirector;
   private inscriptions: Inscriptions;
@@ -100,6 +114,8 @@ export class ParkChapter implements Chapter {
       peaceful: false,
     };
     this.panel = new DemonPanel(s.canvas, s.camera.camera, this.abilities, this.human, this.overlay, this.env.pavement, () => this.obstacleCtx);
+    this.prologue = new Prologue(s.scene, s.bus, this.env, this.visitor, this.cine);
+    this.prologue.onHandoff = () => this.onPrologueHandoff();
 
     // Registered once, here — never on start/reset, so replays don't stack handlers.
     this.unsub.push(
@@ -133,12 +149,33 @@ export class ParkChapter implements Chapter {
   enterTitle(): void {
     this.reset();
     this.panel.setActive(false);
-    this.s.camera.setMode('title');
   }
 
-  start(): void {
+  /** Roll the opening: the camera eases out of the title shot into the first set-up. */
+  beginPrologue(): void {
+    this.panel.setActive(false);
+    const from = this.titleFrame;
+    this.prologue.start();
+    if (from) this.cine.startFrom(from.pos, from.look, from.fov);
+  }
+
+  /** Jump the prologue to its end state (the caller fades to black around this). */
+  skipPrologue(): void {
+    this.prologue.skip();
+    this.start(true);
+  }
+
+  /**
+   * The chase begins where the prologue left her. After a skip the camera
+   * is placed directly (we are behind a fade); otherwise it eases from the
+   * last cinematic shot into the chase framing.
+   */
+  start(snap = false): void {
+    this.prologue.release();
+    this.chaseActive = true;
     this.visitor.controller.start();
-    this.s.camera.setMode('chase');
+    if (snap) this.s.camera.snap(this.cameraSubject());
+    else this.s.camera.beginHandoff(this.cameraSubject(), 2.2);
     this.hintShown = true;
     this.hintTimer = 0;
     this.s.ui.showHint(true);
@@ -147,6 +184,8 @@ export class ParkChapter implements Chapter {
 
   reset(): void {
     this.complete = false;
+    this.chaseActive = false;
+    this.titleFrame = null;
     this.arriveTime = -1;
     this.hintShown = false;
     this.hintTimer = 0;
@@ -167,6 +206,9 @@ export class ParkChapter implements Chapter {
     this.panel.reset();
     this.overlay.hide();
     this.visitor.reset(this.startX, this.env.pavement);
+    // Debug skip-ahead (?x=…) starts in the park; otherwise she starts with her friends.
+    if (this.startX <= COURSE.start) this.prologue.reset();
+    for (const f of this.prologue.friends) f.char.object.visible = true;
     // Debug skip-ahead into the hill: bring the set-piece up instantly.
     if (this.startX > COURSE.pavementStart - 20) this.env.pavement.beginRise();
     if (this.startX > COURSE.hillCrest - 26) this.env.pavement.beginSlide();
@@ -180,7 +222,35 @@ export class ParkChapter implements Chapter {
     return { position: this.visitor.position, speed: c.speed, slide: c.slideBlend };
   }
 
+  /** Title backdrop and prologue: the world lives, the Demon waits. */
+  private updateCinematic(dt: number): void {
+    const frame = this.prologue.active ? this.prologue.update(dt) : this.prologue.updateTitle(dt);
+    if (!this.prologue.active) this.titleFrame = frame;
+    if (!this.chaseActive) this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
+    const r = this.prologue.grassRipple();
+    this.env.rippleGrass(r.x, r.amp);
+    this.env.warmth = this.warmthAt(this.visitor.position.x);
+    this.env.setGust(0);
+    this.env.setAnxiety(0);
+    this.env.update(dt, this.s.camera.camera, this.visitor.position);
+    this.s.audio.update(dt, { speed: 0, sliding: false, gust: 0, playing: false, peace: false, anxiety: 0, city: this.env.warmth, prologue: true });
+  }
+
+  /** The ordinary evening holds on the plaza and drains away inside the gate. */
+  private warmthAt(x: number): number {
+    return 1 - smoothstep(ENTRANCE.gateX - 2, ENTRANCE.handoffX - 2, x);
+  }
+
+  /** Seconds of prologue still to run (for UI). */
+  get prologueRemaining(): number {
+    return Math.max(0, HANDOFF_AT - this.prologue.time);
+  }
+
   update(rawDt: number): void {
+    if (!this.chaseActive) {
+      this.updateCinematic(rawDt);
+      return;
+    }
     this.timeScale = damp(this.timeScale, 1, 5, rawDt);
     const dt = rawDt * this.timeScale;
     this.time += dt;
@@ -204,6 +274,12 @@ export class ParkChapter implements Chapter {
     for (const h of this.abilities.hazards) if (h instanceof WindGust) gust = Math.max(gust, h.gustStrength);
     this.env.setGust(gust * 0.9);
     this.env.setAnxiety(this.mind.anxiety);
+    this.env.warmth = this.warmthAt(c.x);
+    this.env.rippleGrass(0, 0);
+    this.visitor.dread = this.mind.anxiety;
+    // Her friends stay at the gate; once she's well inside, they're out of every shot.
+    const hide = c.x > ENTRANCE.gateX + 14;
+    for (const f of this.prologue.friends) f.char.object.visible = !hide;
     this.env.update(dt, this.s.camera.camera, this.visitor.position);
     this.s.camera.update(rawDt, this.cameraSubject());
     this.overlay.update(rawDt);
@@ -233,6 +309,7 @@ export class ParkChapter implements Chapter {
       playing: c.mode !== 'idle',
       peace: this.tricks.peaceful,
       anxiety: this.mind.anxiety,
+      city: this.env.warmth,
     });
 
     // --- Arrival at the house ---

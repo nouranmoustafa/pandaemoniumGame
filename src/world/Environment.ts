@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { COLORS, COURSE } from '../config';
 import type { EventBus } from '../core/Events';
-import { mulberry32 } from '../core/math';
+import { mulberry32, smoothstep } from '../core/math';
 import { GrassField } from './GrassField';
 import { House } from './House';
+import { ENTRANCE, ParkEntrance } from './ParkEntrance';
 import { Particles } from './Particles';
 import { Pavement } from './Pavement';
 import { Sky } from './Sky';
@@ -25,7 +26,20 @@ export class Environment {
   readonly moonLight: THREE.DirectionalLight;
   readonly barkMaterial: THREE.MeshStandardMaterial;
   readonly lamps: Streetlights;
+  /** The town edge and gate, where the prologue plays. */
+  readonly entrance: ParkEntrance;
   private grass: GrassField;
+  private hemi: THREE.HemisphereLight;
+  private amber: THREE.DirectionalLight;
+  /** The last of the sunset, low behind the town. */
+  private afterglow: THREE.DirectionalLight;
+  /** 0..1 — the ordinary evening (1) giving way to the park's night (0). */
+  warmth = 0;
+  private warmFog = new THREE.Color(0x4a3448);
+  private nightHemiSky = new THREE.Color(COLORS.hemiSky);
+  private warmHemiSky = new THREE.Color(0x7a6a8a);
+  private nightHemiGround = new THREE.Color(COLORS.hemiGround);
+  private warmHemiGround = new THREE.Color(0x3a2418);
   private fill: THREE.PointLight;
   private time = 0;
   private gust = 0;
@@ -49,6 +63,7 @@ export class Environment {
 
     // Lighting.
     const hemi = new THREE.HemisphereLight(COLORS.hemiSky, COLORS.hemiGround, 1.1);
+    this.hemi = hemi;
     this.group.add(hemi);
     this.moonLight = new THREE.DirectionalLight(COLORS.moonLight, 2.4);
     this.moonLight.castShadow = true;
@@ -65,7 +80,11 @@ export class Environment {
     this.group.add(this.moonLight, this.moonLight.target);
     const amber = new THREE.DirectionalLight(COLORS.amber, 0.5);
     amber.position.set(1, 0.25, 0.05);
+    this.amber = amber;
     this.group.add(amber);
+    this.afterglow = new THREE.DirectionalLight(0xff9a62, 0);
+    this.afterglow.position.set(-1, 0.22, 0.35);
+    this.group.add(this.afterglow);
     this.fill = new THREE.PointLight(0x9a9cff, 16, 9, 1.3);
     this.group.add(this.fill);
 
@@ -126,6 +145,9 @@ export class Environment {
     const placements: Array<{ near: boolean; geo: number; m: THREE.Matrix4 }> = [];
     const placeTree = (x: number, z: number, scale: number) => {
       if (x > COURSE.houseX - 70 && z > -50 && z < 30) return;
+      // The crooked trees only begin inside the gate, thinly at first.
+      if (x < ENTRANCE.gateX + 4) return;
+      if (x < ENTRANCE.gateX + 16 && rand() > (x - ENTRANCE.gateX - 4) / 12) return;
       if (keepClear.some((k) => Math.abs(k - x) < 5) && z > -13 && z < 13) return;
       const near = z > -15 && z < 15;
       const pool = near ? nearVariants : farVariants;
@@ -163,7 +185,7 @@ export class Environment {
     const fenceGeo = mergeGeometries([postGeo.toNonIndexed(), spike.toNonIndexed()])!;
     const fencePosts: THREE.Matrix4[] = [];
     const euler = new THREE.Euler();
-    for (let x = -60; x < COURSE.houseX - 40; x += 0.55) {
+    for (let x = ENTRANCE.gateX + 0.6; x < COURSE.houseX - 40; x += 0.55) {
       if (rand() < 0.04) x += 3;
       const z = 6.6 + Math.sin(x * 0.05) * 0.3;
       euler.set((rand() - 0.5) * 0.25, 0, (rand() - 0.5) * 0.25);
@@ -187,10 +209,18 @@ export class Environment {
     this.house.group.position.set(COURSE.houseX, 0, COURSE.houseZ);
     this.group.add(this.house.group);
 
+    this.entrance = new ParkEntrance();
+    this.group.add(this.entrance.group);
+
     this.particles = new Particles();
     this.group.add(this.particles.group);
 
     scene.add(this.group);
+  }
+
+  /** A wave through the grass that has nothing to do with the wind. */
+  rippleGrass(x: number, amp: number): void {
+    this.grass.ripple(x, amp);
   }
 
   /** The Demon can whip up the wind. */
@@ -214,6 +244,7 @@ export class Environment {
   }
 
   reset(): void {
+    this.entrance.reset();
     this.gust = this.gustTarget = 0;
     this.peace = this.peaceTarget = 0;
     this.anxiety = 0;
@@ -241,9 +272,20 @@ export class Environment {
     this.treeUniforms.uWind.value = gust;
 
     // Mood: the shortcut clears the air; anxiety thickens and reddens it.
+    // The prologue's warm evening (warmth) lifts it all toward dusk.
+    const w = this.warmth;
     const fog = this.scene.fog as THREE.FogExp2;
-    fog.density = 0.0125 * (1 - this.peace * 0.45) * (1 + this.anxiety * 0.18);
-    fog.color.setHex(COLORS.fog).lerp(this.anxiousFog, this.anxiety * 0.45);
+    fog.density = 0.0125 * (1 - this.peace * 0.45) * (1 + this.anxiety * 0.18) * (1 - w * 0.45);
+    fog.color.setHex(COLORS.fog).lerp(this.anxiousFog, this.anxiety * 0.45).lerp(this.warmFog, w);
+    this.hemi.color.copy(this.nightHemiSky).lerp(this.warmHemiSky, w);
+    this.hemi.groundColor.copy(this.nightHemiGround).lerp(this.warmHemiGround, w);
+    this.hemi.intensity = 1.1 + w * 0.25;
+    this.moonLight.intensity = 2.4 - w * 1.5;
+    this.amber.intensity = 0.5 + w * 0.2;
+    this.afterglow.intensity = w * 1.5;
+    this.sky.warmth = w;
+    this.sky.setFog(fog.color);
+    this.entrance.update(dt, smoothstep(16, 2, focus.x - ENTRANCE.gateX));
     (this.scene.background as THREE.Color).copy(fog.color);
 
     // Moon shadow follows the Visitor so shadows stay crisp where it matters.
