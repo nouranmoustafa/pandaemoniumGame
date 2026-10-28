@@ -14,7 +14,9 @@ under the SIL Open Font License.
 
 | File | Use | Author | Licence | Source |
 | --- | --- | --- | --- | --- |
-| `public/characters/pipeline-test/RobotExpressive.glb` | Validates the GLB import pipeline in `?lab&glb` | Tomás Laulhé (Quaternius); morph targets by Don McCurdy | CC0 1.0 | three.js r170, `examples/models/gltf/RobotExpressive` |
+| `public/characters/pipeline-test/RobotExpressive.glb` | Validates the GLB pipeline in `?lab&glb`, and as the in-game Visitor body with `?visitor=test` | Tomás Laulhé (Quaternius); morph targets by Don McCurdy | CC0 1.0 | three.js r170, `examples/models/gltf/RobotExpressive` |
+
+No recorded audio is shipped. The optional sample slot is documented in `public/audio/README.md`.
 
 "Hearth", the dating app shown on the Visitor's phone, is fictional. Its name,
 logo and layout were made for this game.

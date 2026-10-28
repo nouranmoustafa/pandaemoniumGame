@@ -21,10 +21,10 @@ export const GESTURES = {
   /** Conversational hand beats: forearm up, open palm, small emphatic beats. */
   talk: {
     duration: 2.6,
-    ease: [0.35, 0.5],
+    ease: [0.5, 0.7],
     apply(p, t, w, side) {
       const s = S(side);
-      const beat = Math.sin(t * 7.5) * 0.12 * smoothstep(0.3, 0.6, t) + noise1(t * 2, 3) * 0.1;
+      const beat = Math.sin(t * 4.2) * 0.08 * smoothstep(0.3, 0.7, t) + noise1(t * 1.4, 3) * 0.08;
       p.blendJoint(`shoulder${s}`, -0.45 + beat * 0.3, side * 0.25, side * 0.18, w);
       p.blendJoint(`elbow${s}`, -1.45 - beat, side * 0.5, 0, w);
       p.blendJoint(`wrist${s}`, 0.15 + beat * 0.6, side * -0.7, side * 0.2, w);
@@ -35,11 +35,11 @@ export const GESTURES = {
   /** Both hands, a little bigger — Juno telling a story. */
   story: {
     duration: 3.2,
-    ease: [0.4, 0.5],
+    ease: [0.55, 0.75],
     apply(p, t, w) {
       for (const side of [1, -1] as const) {
         const s = S(side);
-        const beat = Math.sin(t * 6 + (side > 0 ? 0 : 1.3)) * 0.15 + noise1(t * 1.7, side + 4) * 0.15;
+        const beat = Math.sin(t * 3.6 + (side > 0 ? 0 : 1.3)) * 0.1 + noise1(t * 1.2, side + 4) * 0.12;
         p.blendJoint(`shoulder${s}`, -0.55 + beat * 0.4, side * 0.3, side * 0.25, w);
         p.blendJoint(`elbow${s}`, -1.35 - beat, side * 0.45, 0, w);
         p.blendJoint(`wrist${s}`, 0.1, side * -0.8, side * 0.3, w);
@@ -54,7 +54,7 @@ export const GESTURES = {
     duration: 2.2,
     ease: [0.12, 0.6],
     apply(p, t, w, side) {
-      const bounce = Math.abs(Math.sin(t * 13)) * (1 - smoothstep(0.6, 2.0, t));
+      const bounce = Math.abs(Math.sin(t * 9)) * (1 - smoothstep(0.5, 2.0, t)) * 0.8;
       p.add('spine', (-0.06 + bounce * 0.05) * w, 0, 0);
       p.add('chest', (-0.04 + bounce * 0.06) * w, 0, 0);
       p.add('neck', -0.1 * w, 0, 0);

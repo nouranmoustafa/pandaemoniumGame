@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { CAST, OUTFITS } from '../characters/cast';
 import type { ExpressionMix } from '../characters/Expression';
 import { GeneratedCharacter } from '../characters/GeneratedCharacter';
+import type { GestureName } from '../characters/gestures';
+import type { GltfAvatar } from '../characters/gltf/GltfAvatar';
 import { Performer } from '../characters/Performer';
 import type { EventBus } from '../core/Events';
 import type { Input } from '../core/Input';
+import { RUN } from '../config';
 import { clamp, damp, smoothstep } from '../core/math';
 import type { VisitorAnimator } from './VisitorAnimator';
 import { type Ground, VisitorController } from './VisitorController';
@@ -19,6 +22,13 @@ export const CHASE_HEADING = Math.PI / 2;
  * position and the animator follows its speed. In cinematics, the prologue
  * places her and sets her walking speed directly. The animator (and its gait
  * phase) is the same object in both, so a walk flows straight into the run.
+ *
+ * Bodies: by default she is the generated skinned character. If a rigged GLB
+ * is attached (attachGlb), it becomes the visible body for the whole run —
+ * prologue and chase — driven by the same controller state through its
+ * AnimationMixer. The generated character keeps running hidden as the
+ * performance driver (gesture timing, gaze, face), so the cameras and the
+ * script work unchanged with either body.
  */
 export class Visitor {
   readonly controller: VisitorController;
@@ -35,6 +45,11 @@ export class Visitor {
   private accel = new THREE.Vector3();
   private relief = 0;
   private lookAhead = new THREE.Vector3();
+  /** The GLB body, when one is attached. */
+  glb: GltfAvatar | null = null;
+  /** The phone prop in the GLB's hand (the generated body carries its own). */
+  private glbPhone: THREE.Object3D | null = null;
+  private tmp = new THREE.Vector3();
 
   constructor(private bus: EventBus) {
     this.controller = new VisitorController(bus);
@@ -43,6 +58,80 @@ export class Visitor {
     this.animator.onStep((foot) => this.bus.emit('visitor:step', { speed: Math.max(this.controller.speed, this.cineSpeed), foot }));
     bus.on('visitor:dodge', () => (this.relief = 1));
     bus.on('visitor:caught', () => this.performer.play('flinch'));
+    bus.on('visitor:lane', () => this.glb?.play('dodge', 0.06, 0.2));
+    this.performer.onGesture = (g) => this.glbGesture(g);
+  }
+
+  /** Make a rigged GLB her visible body. The generated one carries on, hidden, as the driver. */
+  attachGlb(avatar: GltfAvatar): void {
+    this.glb?.dispose();
+    this.glb = avatar;
+    const parent = this.character.object.parent;
+    parent?.add(avatar.object);
+    this.character.object.visible = false;
+    // Her phone: the same prop (and the same dating-app screen), carried by the GLB's hand.
+    this.glbPhone?.removeFromParent();
+    this.glbPhone = this.character.phone.clone(true);
+    this.glbPhone.scale.setScalar(this.character.design.scale);
+    parent?.add(this.glbPhone);
+    this.syncTransform();
+  }
+
+  /** Back to the generated body (missing asset, or a toggle). */
+  detachGlb(): void {
+    this.glb?.dispose();
+    this.glb = null;
+    this.glbPhone?.removeFromParent();
+    this.glbPhone = null;
+    this.character.object.visible = true;
+  }
+
+  /** The script's gestures, as the GLB's own clips (when it has them). */
+  private glbGesture(g: GestureName): void {
+    if (!this.glb) return;
+    const map: Partial<Record<GestureName, string>> = {
+      talk: 'talk',
+      story: 'talk',
+      laugh: 'laugh',
+      wave: 'wave',
+      waveStop: 'wave',
+      thumbBack: 'wave',
+      hesitate: 'hesitate',
+      nod: 'talk',
+    };
+    const clip = map[g];
+    if (clip) this.glb.play(clip);
+  }
+
+  /** World position of her eyes, whichever body she's in (for cameras and look-ats). */
+  eyesWorld(out: THREE.Vector3): THREE.Vector3 {
+    return this.glb ? this.glb.getEyesWorld(out) : this.character.getEyesWorld(out);
+  }
+
+  /** World position of the phone screen she's reading. */
+  phoneScreenWorld(out: THREE.Vector3): THREE.Vector3 {
+    return this.glbPhone ? this.glbPhone.getWorldPosition(out) : this.character.phoneScreen.getWorldPosition(out);
+  }
+
+  /** Keep the GLB's phone in its right hand, screen turned toward `aim`. */
+  private placeGlbPhone(aim: THREE.Vector3 | null): void {
+    const phone = this.glbPhone;
+    if (!phone || !this.glb) return;
+    phone.visible = this.character.phone.visible;
+    if (!phone.visible) return;
+    const hand = this.glb.getHandWorld('R', this.tmp) ?? this.eyesWorld(this.tmp).add(new THREE.Vector3(0, -0.4, 0));
+    phone.position.copy(hand).add(new THREE.Vector3(0, 0.07, 0));
+    const target = aim ?? this.eyesWorld(new THREE.Vector3());
+    const x = target.clone().sub(phone.position).normalize();
+    const z = new THREE.Vector3().crossVectors(x, new THREE.Vector3(0, 1, 0)).normalize();
+    const y = new THREE.Vector3().crossVectors(z, x).normalize();
+    phone.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  }
+
+  /** Called by the prologue each frame with where the phone's screen should face. */
+  aimPhone(target: THREE.Vector3, w: number): void {
+    this.character.aimPhone(target, w);
+    this.placeGlbPhone(target);
   }
 
   get animator(): VisitorAnimator {
@@ -97,6 +186,10 @@ export class Visitor {
     this.trackMotion(dt);
     this.performer.update(dt, { speed });
     this.character.updateSecondary(dt, { velocity: this.velocity, accel: this.accel, wind: 0.08, slide: 0 });
+    if (this.glb) {
+      this.glb.drive(dt, { speed, stumbleTime: -1, stumbleDuration: 1, slide: 0, laneVel: 0, windLean: 0, slope: 0, arriving: false });
+      this.glb.setFace(this.performer.face, this.performer.blink);
+    }
   }
 
   update(dt: number, input: Input, ground: Ground): void {
@@ -140,6 +233,20 @@ export class Visitor {
       wind: Math.min(1, Math.abs(c.windLean) + c.headwind),
       slide: c.slideBlend,
     });
+    this.placeGlbPhone(null);
+    if (this.glb) {
+      this.glb.drive(dt, {
+        speed: c.speed,
+        stumbleTime: c.stumbleTime,
+        stumbleDuration: RUN.stumbleDuration,
+        slide: c.slideBlend,
+        laneVel: c.laneVel,
+        windLean: c.windLean,
+        slope: c.slope * (1 - c.slideBlend),
+        arriving: c.mode === 'arrive',
+      });
+      this.glb.setFace(this.performer.face, this.performer.blink);
+    }
   }
 
   /** What her face does while she runs. */
@@ -167,9 +274,13 @@ export class Visitor {
     this.position.set(c.x, c.y, c.z);
     this.character.object.position.copy(this.position);
     this.character.object.rotation.set(0, this.heading, 0);
+    if (this.glb) {
+      this.glb.object.position.copy(this.position);
+      this.glb.object.rotation.set(0, this.heading, 0);
+    }
   }
 
   getAnkle(side: 'L' | 'R', out: THREE.Vector3): THREE.Vector3 {
-    return this.character.getAnkleWorld(side, out);
+    return this.glb ? this.glb.getAnkleWorld(side, out) : this.character.getAnkleWorld(side, out);
   }
 }

@@ -90,16 +90,16 @@ export class GeneratedCharacter implements VisitorAvatar {
 
     this.skinMat = new THREE.MeshPhysicalMaterial({
       color: design.skin,
-      roughness: 0.52,
-      sheen: 0.35,
+      roughness: 0.58,
+      sheen: 0.25,
       sheenColor: new THREE.Color(0xff8a70),
       sheenRoughness: 0.7,
     });
     this.face = new FacePainter(design.makeup);
     this.headMat = new THREE.MeshPhysicalMaterial({
       map: this.face.texture,
-      roughness: 0.5,
-      sheen: 0.35,
+      roughness: 0.56,
+      sheen: 0.25,
       sheenColor: new THREE.Color(0xff8a70),
       sheenRoughness: 0.7,
     });
@@ -114,8 +114,8 @@ export class GeneratedCharacter implements VisitorAvatar {
     this.hairMat = new THREE.MeshPhysicalMaterial({
       color: design.hair.color,
       map: ht,
-      roughness: 0.48,
-      sheen: 0.6,
+      roughness: 0.64,
+      sheen: 0.35,
       sheenColor: new THREE.Color(design.hair.sheen),
       sheenRoughness: 0.35,
       side: THREE.DoubleSide,

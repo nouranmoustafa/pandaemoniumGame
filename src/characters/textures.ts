@@ -108,7 +108,13 @@ export class FacePainter {
       blob(s * 0.4, -0.3, 95, m.blush, 0.32);
       blob(s * 0.62, 0.18, 90, m.skinShadow, 0.25);
     }
-    blob(0, -0.27, 30, m.blush, 0.25);
+    blob(0, -0.27, 30, m.blush, 0.2);
+    // Nostrils as a hint of shadow, cheek hollows, the line of the jaw.
+    for (const s of [1, -1]) {
+      blob(s * 0.07, -0.33, 14, m.skinShadow, 0.35);
+      blob(s * 0.55, -0.36, 80, m.skinShadow, 0.22);
+      blob(s * 0.18, 0.05, 26, m.skinShadow, 0.18);
+    }
     blob(0, -0.85, 160, m.skinShadow, 0.35);
     if (m.freckles) {
       const rand = mulberry32(7);
@@ -192,8 +198,11 @@ export class FacePainter {
         g.lineTo(cx, cy);
       }
       g.closePath();
-      g.globalAlpha = 0.92;
+      // Soft edges: brows are hair, not ink.
+      g.filter = 'blur(1.4px)';
+      g.globalAlpha = 0.86;
       g.fill();
+      g.filter = 'none';
       g.globalAlpha = 1;
     }
     // A worry line between knitted brows.
@@ -317,13 +326,13 @@ export function eyeTexture(iris: string, irisDark: string): THREE.CanvasTexture 
   c.height = H;
   const g = c.getContext('2d')!;
   const sclera = g.createLinearGradient(0, 0, 0, H);
-  sclera.addColorStop(0, '#f2ece6');
-  sclera.addColorStop(0.5, '#e6d8d2');
-  sclera.addColorStop(1, '#b89a98');
+  sclera.addColorStop(0, '#e4d8cf');
+  sclera.addColorStop(0.45, '#d6c4bb');
+  sclera.addColorStop(1, '#9c7c7a');
   g.fillStyle = sclera;
   g.fillRect(0, 0, W, H);
-  const irisRows = H * 0.19;
-  const pupilRows = H * 0.075;
+  const irisRows = H * 0.168;
+  const pupilRows = H * 0.066;
   const rand = mulberry32(3);
   for (let y = 0; y < irisRows; y++) {
     const t = y / irisRows;

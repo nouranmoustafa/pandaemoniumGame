@@ -3,7 +3,10 @@ import { MODE_TUNING } from '../config';
 
 export interface UIHandlers {
   onPlay: (mode: 'single' | 'versus') => void;
-  onRestart: () => void;
+  /** Straight back into the chase at the gate (same mode). */
+  onRetryChase: () => void;
+  /** The whole story again, from the prologue (same mode). */
+  onReplayStory: () => void;
   onResume: () => void;
   onQuit: () => void;
   onToggleMute: () => boolean;
@@ -67,12 +70,14 @@ export class UI {
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
     const pm = el('div', 'menu');
     const resume = el('button', '', 'RESUME');
-    const restart = el('button', '', 'RESTART');
+    const retry = el('button', '', 'RETRY CHASE');
+    const replay = el('button', '', 'REPLAY STORY');
     const quit = el('button', '', 'QUIT TO TITLE');
     resume.addEventListener('click', handlers.onResume);
-    restart.addEventListener('click', handlers.onRestart);
+    retry.addEventListener('click', handlers.onRetryChase);
+    replay.addEventListener('click', handlers.onReplayStory);
     quit.addEventListener('click', handlers.onQuit);
-    pm.append(resume, restart, quit);
+    pm.append(resume, retry, replay, quit);
     this.pause.append(pm);
 
     const mute = el('button', 'mute', 'SOUND ON');
@@ -171,12 +176,14 @@ export class UI {
       <p class="line">${line}</p>
       <p class="stats">CAUGHT ${caught}&nbsp;&nbsp;·&nbsp;&nbsp;${time.toFixed(1)}s</p>`;
     const m = el('div', 'menu');
-    const again = el('button', '', 'RUN AGAIN');
+    const retry = el('button', '', 'RETRY CHASE');
+    const replay = el('button', '', 'REPLAY STORY');
     const quit = el('button', '', 'TITLE');
-    again.addEventListener('click', this.endHandlers.onRestart);
+    retry.addEventListener('click', this.endHandlers.onRetryChase);
+    replay.addEventListener('click', this.endHandlers.onReplayStory);
     quit.addEventListener('click', this.endHandlers.onQuit);
-    m.append(again, quit);
-    const hint = el('p', 'stats', 'THE PARK — TO BE CONTINUED &nbsp;·&nbsp; PRESS R TO RUN AGAIN');
+    m.append(retry, replay, quit);
+    const hint = el('p', 'stats', 'THE PARK — TO BE CONTINUED &nbsp;·&nbsp; R RETRIES THE CHASE');
     hint.style.marginTop = '2.4em';
     hint.style.fontSize = '0.75rem';
     this.end.append(m, hint);

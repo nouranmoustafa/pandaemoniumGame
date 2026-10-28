@@ -13,7 +13,7 @@ export const CAST: Record<CharacterId, CharacterDesign> = {
     id: 'visitor',
     name: 'The Visitor',
     proportions: { height: 1.66, shoulder: 0.097, hip: 1.0, leg: 1.0, arm: 1.0, neck: 1.0, head: 1.0, bust: 1.0, waist: 0.95, slouch: 0 },
-    face: { jaw: 1.0, chin: 1.0, cheek: 1.0, nose: 0.95, noseWidth: 0.95, lips: 1.05, eyeSize: 1.08, eyeSpacing: 1.0, eyeTilt: 0.1, browHeight: 1.0 },
+    face: { jaw: 1.0, chin: 1.0, cheek: 1.0, nose: 0.95, noseWidth: 0.95, lips: 1.05, eyeSize: 1.0, eyeSpacing: 1.0, eyeTilt: 0.1, browHeight: 1.0 },
     skin: 0xe9c9b6,
     makeup: {
       skin: '#e9c9b6',

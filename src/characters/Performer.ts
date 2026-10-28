@@ -24,12 +24,18 @@ interface ActiveGesture {
 export class Performer {
   readonly animator = new VisitorAnimator();
   readonly pose = new Pose();
+  private layered = new Pose();
+  private primed = false;
+  private fidgetT = 1 + Math.random() * 2;
+  private saccade = new THREE.Vector2();
+  /** Small unprompted life: glances and tilts whenever nothing is scripted. */
+  autoFidget = true;
   private gestures: ActiveGesture[] = [];
-  private face: FaceState = { ...NEUTRAL };
+  private faceState: FaceState = { ...NEUTRAL };
   private faceTarget: FaceState = { ...NEUTRAL };
   private mix: ExpressionMix = {};
   /** How fast the face moves toward its target. */
-  faceRate = 6;
+  faceRate = 4.5;
   private lookTarget: THREE.Vector3 | null = null;
   private lookWeight = 0;
   private headYaw = 0;
@@ -45,6 +51,9 @@ export class Performer {
   private pocket = 0;
   private pocketTarget = 0;
   typing = 0;
+  /** 1 = phone held up to read; lower values let it sink toward the chest (so it doesn't hide her face). */
+  phoneLift = 1;
+  private lift = 1;
   idleStyle: IdleStyle;
   nervous = 0;
   time = Math.random() * 20;
@@ -55,7 +64,16 @@ export class Performer {
     this.idleStyle = character.design.idle;
   }
 
+  /** Called whenever a gesture starts (a GLB body plays its own clip for it). */
+  onGesture: (name: GestureName) => void = () => {};
+  /** This frame's face and blink, after smoothing. */
+  blink = 0;
+  get face(): Readonly<FaceState> {
+    return this.faceState;
+  }
+
   play(name: GestureName, side: 1 | -1 = 1, extend = 0): void {
+    this.onGesture(name);
     this.gestures = this.gestures.filter((g) => g.name !== name);
     this.gestures.push({ name, t: 0, side, weight: 0, extend });
   }
@@ -69,7 +87,7 @@ export class Performer {
     return this.gestures.some((g) => g.name === name);
   }
 
-  express(mix: ExpressionMix, rate = 6): void {
+  express(mix: ExpressionMix, rate = 4.5): void {
     this.mix = mix;
     this.faceRate = rate;
   }
@@ -92,14 +110,16 @@ export class Performer {
   reset(): void {
     this.gestures = [];
     this.mix = {};
-    Object.assign(this.face, NEUTRAL);
+    Object.assign(this.faceState, NEUTRAL);
     this.lookTarget = null;
     this.phone = this.phoneTarget = 0;
     this.pocket = this.pocketTarget = 0;
     this.typing = 0;
+    this.phoneLift = this.lift = 1;
     this.stare = false;
     this.nervous = 0;
     this.headYaw = this.headPitch = this.eyeYaw = this.eyePitch = 0;
+    this.primed = false;
     this.character.phone.visible = false;
     this.animator.reset();
   }
@@ -123,11 +143,18 @@ export class Performer {
       nervous: this.nervous,
       ...input,
     });
-    const p = this.pose.copy(base);
+    const p = this.layered.copy(base);
+    this.fidget(dt);
     this.layer(dt, p);
-    this.character.applyPose(p);
+    // A final, softer follow: gestures gain weight and follow-through, and nothing starts or
+    // stops on a single frame. (The chase skips this — there, responsiveness comes first.)
+    if (!this.primed) {
+      this.pose.copy(p);
+      this.primed = true;
+    } else this.pose.dampToward(p, 11, dt);
+    this.character.applyPose(this.pose);
     this.updateFace(dt);
-    return p;
+    return this.pose;
   }
 
   /** Apply gestures, phone and gaze on top of an already-built pose (used by the chase too). */
@@ -158,7 +185,8 @@ export class Performer {
     const goal = this.phoneTarget === 1 && this.pocketTarget === 0 ? 1 : 0;
     this.phone = damp(this.phone, goal, 4, dt);
     pocketReach(p, reaching * (1 - this.phone));
-    phoneHold(p, this.phone, this.time, this.typing);
+    this.lift = damp(this.lift, this.phoneLift, 3, dt);
+    phoneHold(p, this.phone * this.lift, this.time, this.typing);
 
     // --- Gaze: eyes lead, head follows, chest helps on big turns ---
     let wantYaw = 0;
@@ -183,12 +211,22 @@ export class Performer {
     p.add('chest', 0, hy * chestShare, 0);
     p.add('neck', -this.headPitch * 0.3, hy * 0.35, 0);
     p.add('head', -this.headPitch * 0.55, hy * (0.65 - chestShare), 0);
-    this.character.setGaze(this.eyeYaw - this.headYaw * 0.92, this.eyePitch - this.headPitch * 0.85);
+    this.character.setGaze(this.eyeYaw - this.headYaw * 0.92 + this.saccade.x, this.eyePitch - this.headPitch * 0.85 + this.saccade.y);
+  }
+
+  /** Between scripted beats: tiny eye saccades and the occasional tilt or nod. */
+  private fidget(dt: number): void {
+    if (!this.autoFidget) return;
+    this.fidgetT -= dt;
+    if (this.fidgetT > 0) return;
+    this.fidgetT = 1.2 + Math.random() * 2.4;
+    this.saccade.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.06);
+    if (this.gestures.length === 0 && this.phone < 0.1 && Math.random() < 0.35) this.play(Math.random() < 0.6 ? 'tilt' : 'nod', Math.random() < 0.5 ? 1 : -1);
   }
 
   updateFace(dt: number): void {
     mixExpression(this.mix, this.faceTarget);
-    dampFace(this.face, this.faceTarget, this.faceRate, dt);
+    dampFace(this.faceState, this.faceTarget, this.faceRate, dt);
     // Blinks: every few seconds, sometimes doubled; never during a stare.
     let blink = 0;
     if (this.blinkT >= 0) {
@@ -202,6 +240,7 @@ export class Performer {
         this.nextBlink = Math.random() < 0.2 ? 0.25 : 2 + Math.random() * 3.5;
       }
     }
-    this.character.updateFace(dt, this.face, blink);
+    this.blink = blink;
+    this.character.updateFace(dt, this.faceState, blink);
   }
 }

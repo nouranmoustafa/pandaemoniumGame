@@ -1,4 +1,5 @@
 import type { CatchCause, EventBus, HazardKind } from '../core/Events';
+import { SampleBank } from './SampleBank';
 
 /**
  * Procedural sound: wind, a low drone, a sparse music-box motif, footsteps,
@@ -34,6 +35,13 @@ export class AudioEngine {
   private carTimer = 4;
   private duskTimer = 1;
   private duskStep = 0;
+  private birdTimer = 3;
+  private insectTimer = 2;
+  private owlDone = false;
+  /** Where her feet are: flagstones on the plaza, cobbles in the park. */
+  surface: 'flagstone' | 'cobble' = 'cobble';
+  /** Optional licensed recordings, used in place of synthesis when present. */
+  readonly samples = new SampleBank();
 
   constructor(bus: EventBus) {
     bus.on('visitor:step', ({ speed }) => this.footstep(speed));
@@ -146,6 +154,7 @@ export class AudioEngine {
     this.reverbSend.connect(this.reverb).connect(this.master);
 
     this.startAmbience();
+    void this.samples.load(ctx, import.meta.env.BASE_URL);
   }
 
   setMuted(m: boolean): void {
@@ -334,6 +343,7 @@ export class AudioEngine {
         this.carPass(city);
       }
     }
+    if (p.prologue) this.duskLife(dt, city);
     if (p.prologue && city > 0.25) {
       // A few soft low notes, unhurried.
       this.duskTimer -= dt;
@@ -388,6 +398,8 @@ export class AudioEngine {
   private footstep(speed: number): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
+    if (this.samples.play(ctx, this.sfx, 'footstep', 0.5 + Math.min(speed, 12) * 0.04, 0.94 + Math.random() * 0.12)) return;
+    if (speed < 2.6) this.heelClick(speed);
     const n = this.noise();
     const f = ctx.createBiquadFilter();
     f.type = 'bandpass';
@@ -410,6 +422,113 @@ export class AudioEngine {
     o.stop(ctx.currentTime + 0.12);
   }
 
+  /** Walking: the boot heel on stone, crisp on the flagstones and softer on the cobbles. */
+  private heelClick(speed: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = this.surface === 'flagstone' ? 3200 + Math.random() * 500 : 2100 + Math.random() * 400;
+    bp.Q.value = 3;
+    const g = ctx.createGain();
+    n.connect(bp).connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    const v = (this.surface === 'flagstone' ? 0.09 : 0.06) * (0.7 + speed * 0.15);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    n.start(t, Math.random() * 2, 0.08);
+  }
+
+  /**
+   * The life of the evening, then its absence: a few distant birds settling
+   * while the town is still audible; inside the gate, a slow insect pulse
+   * and, once, an owl somewhere off the path.
+   */
+  private duskLife(dt: number, city: number): void {
+    const ctx = this.ctx!;
+    if (city > 0.6) {
+      this.birdTimer -= dt;
+      if (this.birdTimer <= 0) {
+        this.birdTimer = 3 + Math.random() * 5;
+        const base = 2600 + Math.random() * 1400;
+        const count = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < count; i++) {
+          const t = ctx.currentTime + i * (0.11 + Math.random() * 0.05);
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(base, t);
+          o.frequency.exponentialRampToValueAtTime(base * (1.2 + Math.random() * 0.3), t + 0.06);
+          const g = ctx.createGain();
+          o.connect(g);
+          g.connect(this.amb);
+          g.connect(this.reverbSend);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.012 * city, t + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+          o.start(t);
+          o.stop(t + 0.1);
+        }
+      }
+    }
+    if (city < 0.55) {
+      this.insectTimer -= dt;
+      if (this.insectTimer <= 0) {
+        this.insectTimer = 0.9 + Math.random() * 0.8;
+        for (let i = 0; i < 3; i++) {
+          const t = ctx.currentTime + i * 0.045;
+          const o = ctx.createOscillator();
+          o.type = 'square';
+          o.frequency.value = 4300;
+          const bp = ctx.createBiquadFilter();
+          bp.type = 'bandpass';
+          bp.frequency.value = 4300;
+          bp.Q.value = 8;
+          const g = ctx.createGain();
+          o.connect(bp).connect(g).connect(this.amb);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.006 * (1 - city), t + 0.008);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+          o.start(t);
+          o.stop(t + 0.04);
+        }
+      }
+    }
+    if (!this.owlDone && city < 0.35) {
+      this.owlDone = true;
+      if (!this.samples.play(ctx, this.reverbSend, 'owl', 0.5)) {
+        // Two low, breathy hoots, far off.
+        for (const [at, len] of [
+          [0, 0.32],
+          [0.55, 0.6],
+        ] as const) {
+          const t = ctx.currentTime + at;
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(410, t);
+          o.frequency.linearRampToValueAtTime(370, t + len);
+          const g = ctx.createGain();
+          o.connect(g);
+          g.connect(this.reverbSend);
+          g.connect(this.amb);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.03, t + 0.06);
+          g.gain.setValueAtTime(0.03, t + len * 0.7);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+          o.start(t);
+          o.stop(t + len + 0.05);
+        }
+      }
+    }
+  }
+
+  /** Reset the once-per-run sounds (the owl). */
+  resetAmbience(): void {
+    this.owlDone = false;
+  }
+
   /** A car going by somewhere behind the houses. */
   private carPass(level: number): void {
     const ctx = this.ctx!;
@@ -429,11 +548,21 @@ export class AudioEngine {
     n.start(t, Math.random(), 4);
   }
 
-  private prologueSound(id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send'): void {
+  private prologueSound(id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' | 'laugh'): void {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     switch (id) {
+      case 'laugh':
+        // A recorded laugh when one has been supplied; otherwise the group's murmur only
+        // warms and swells. A synthesized laugh would sound wrong here.
+        if (!this.samples.play(ctx, this.amb, 'laugh', 0.35)) {
+          this.murmurGain.gain.cancelScheduledValues(t);
+          this.murmurGain.gain.setValueAtTime(this.murmurGain.gain.value, t);
+          this.murmurGain.gain.linearRampToValueAtTime(0.16 * this.city, t + 0.25);
+          this.murmurGain.gain.linearRampToValueAtTime(0.07 * this.city * this.city, t + 1.6);
+        }
+        break;
       case 'buzz': {
         // A phone vibrating in a coat pocket: two short, muffled pulses.
         for (const at of [0, 0.42]) {
@@ -456,6 +585,7 @@ export class AudioEngine {
       }
       case 'notify':
       case 'send': {
+        if (id === 'notify' && this.samples.play(ctx, this.sfx, 'notify', 0.4)) break;
         // Discreet: two soft sine notes.
         const notes = id === 'notify' ? [1318.5, 1760] : [880, 1174.7];
         notes.forEach((fq, i) => {

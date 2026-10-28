@@ -4,6 +4,7 @@ import type { HairKind } from '../design';
 import type { BoneName, CharacterRig, ChainSpec } from '../rig/CharacterRig';
 import { skinByDistance, skinRigid } from '../rig/skinning';
 import { HEAD_SCALE } from './head';
+import { loft } from './loft';
 
 const sstep = (a: number, b: number, v: number) => {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
@@ -125,7 +126,7 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
     const faceSide = sstep(-0.05, 0.25, d.z);
     return d.y - line * faceSide - (1 - faceSide) * -2;
   };
-  const shellLift = kind === 'curly' ? 1.1 : kind === 'long' ? 1.06 : 1.065;
+  const shellLift = kind === 'curly' ? 1.1 : 1.03;
   {
     const lon = 64;
     const lat = 40;
@@ -141,7 +142,7 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
         const above = hairline(d);
         keep.push(above > -0.25);
         // Shell hugs the skull at the hairline, gains volume over the crown.
-        let lift = shellLift + 0.03 * sstep(0.2, 0.9, d.y);
+        let lift = shellLift + (kind === 'curly' ? 0.03 : 0.012) * sstep(0.2, 0.9, d.y);
         if (kind === 'asym' && d.x > 0.3) lift = 1.035; // the cropped side
         if (kind === 'long') lift += 0.02 * sstep(0.2, -0.6, d.z);
         // At the hairline the shell dips beneath the skin, so the edge is the
@@ -172,7 +173,44 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
   const dir = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).normalize();
   const H = rig.p.height;
 
+  /**
+   * Thin locks combed out from a parting over the scalp: what turns a solid
+   * cap into hair. Each lock hugs the skull (just proud of the shell),
+   * rising a little mid-way for volume, and ends at the temple / ear line
+   * where the falling lengths take over.
+   */
+  const crown = (partX: number, count: number, opts: { sweep: number; endY: number; width?: number; back?: number }) => {
+    for (let i = 0; i < count; i++) {
+      const k = i / (count - 1);
+      // Along the parting, front to crown to back.
+      const pz = 0.62 - k * (1.2 + (opts.back ?? 0));
+      const py = 0.78 + 0.18 * Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.5);
+      for (const side of [-1, 1] as const) {
+        // The sweep side gets most of the hair; the other side a short fall.
+        const reach = side === -1 ? opts.sweep : 1 - opts.sweep;
+        if (reach < 0.08) continue;
+        const from = dir(partX + side * 0.02, py, pz);
+        const yaw = side * (0.6 + reach * 1.1) * (1 - Math.abs(pz) * 0.25);
+        const to = from.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        // Front locks swing back to the temple and keep the forehead clear.
+        const front = Math.max(0, pz - 0.1) / 0.52;
+        to.y = opts.endY - (1 - Math.abs(pz)) * 0.12 + (rand() - 0.5) * 0.08 + front * (0.5 - opts.endY);
+        to.z -= front * 0.35;
+        to.normalize();
+        const pts: THREE.Vector3[] = [];
+        for (let j = 0; j <= 5; j++) {
+          const t = j / 5;
+          const d = from.clone().lerp(to, t).normalize();
+          pts.push(frame.at(d, 1.035 + 0.035 * Math.sin(t * Math.PI) + rand() * 0.006));
+        }
+        rigid(lock(pts, (opts.width ?? 0.017) * R * 2.4 * (0.8 + rand() * 0.4), 0.005 * R * 2.4, { seg: 10, radial: 6, taper: 0.6 }));
+      }
+    }
+  };
+
   if (kind === 'visitor') {
+    // A deep side parting on her left; most of the hair combed over to the right.
+    crown(0.3, 26, { sweep: 0.72, endY: 0.18 });
     // Side-swept fringe: long locks from a left parting falling across the forehead to the right.
     for (let i = 0; i < 7; i++) {
       const k = i / 6;
@@ -194,6 +232,19 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
         rigid(lock([root, mid, end], 0.028 * R * 2.4, 0.01 * R * 2.4, { seg: 14 }));
       }
     }
+    // A curtain under the side lengths, so no neck shows between the locks from behind.
+    {
+      const rings = [] as Array<{ y: number; rx: number; zf: number; zb: number; cz: number }>;
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        rings.push({ y: center.y + S.y * (0.55 - t * 1.55), rx: S.x * (1.02 + t * 0.12), zf: S.z * (0.75 + t * 0.1), zb: S.z * (1.02 + t * 0.06), cz: center.z - S.z * 0.08 });
+      }
+      const g = loft(rings, { segments: 28, arc: [1.25, Math.PI * 2 - 1.25] });
+      // Uneven hem.
+      const p = g.getAttribute('position');
+      for (let i = 0; i < p.count; i++) if (p.getY(i) < center.y - S.y * 0.6) p.setY(i, p.getY(i) + Math.sin(p.getX(i) * 90) * 0.006 * H);
+      rigid(g);
+    }
     // The low ponytail.
     const chain = rig.chains.get('hair0')!;
     const pts = chain.map((b) => rig.bindPos.get(b)!.clone().sub(headPos));
@@ -213,6 +264,8 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
   }
 
   if (kind === 'long') {
+    // Centre parting, combed flat and straight down both sides.
+    crown(0, 24, { sweep: 0.5, endY: 0.05, width: 0.019, back: 0.15 });
     // Long, straight, centre-parted — a curtain from the crown to mid-back.
     for (let i = 0; i < 34; i++) {
       const k = i / 33;
@@ -260,6 +313,8 @@ export function buildHair(kind: HairKind, rig: CharacterRig, R: number, center: 
   }
 
   if (kind === 'asym') {
+    // Parting far over on her cropped left side; everything sweeps right.
+    crown(0.55, 20, { sweep: 0.9, endY: 0.3, width: 0.02 });
     // Cropped on her left; on her right a long sweep from the crown past the jaw.
     const chain = rig.chains.get('hair0')!;
     const cp = chain.map((b) => rig.bindPos.get(b)!.clone().sub(headPos));

@@ -107,6 +107,8 @@ export class ParkEntrance {
   readonly group = new THREE.Group();
   readonly keyLight: THREE.SpotLight;
   readonly fill: THREE.PointLight;
+  /** A soft fill that travels with the camera in close-ups, so faces read under the lamps. */
+  readonly faceLight: THREE.PointLight;
   private swing = new THREE.Group();
   private swingAngle = 0;
   private swingVel = 0;
@@ -209,6 +211,8 @@ export class ParkEntrance {
     this.fill = new THREE.PointLight(0xffa860, 26, 16, 1.4);
     this.fill.position.set(-34, 3.6, 4.4);
     this.group.add(this.fill);
+    this.faceLight = new THREE.PointLight(0xffd8b8, 0, 6, 1);
+    this.group.add(this.faceLight);
 
     // --- The gate ---
     this.group.add(this.gate(stone, iron, glow));
@@ -281,13 +285,13 @@ export class ParkEntrance {
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.5, 8), iron);
     base.position.y = 0.25;
     g.add(base);
-    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.14, 0.5, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc488).multiplyScalar(1.5) }));
+    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.14, 0.5, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc488).multiplyScalar(1.15) }));
     lantern.position.y = 4.45;
     g.add(lantern);
     const cap = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.3, 6), iron);
     cap.position.y = 4.85;
     g.add(cap);
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.36 }));
     halo.position.y = 4.45;
     halo.scale.setScalar(1.5);
     g.add(halo);
@@ -315,7 +319,7 @@ export class ParkEntrance {
       const capStone = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.25, 1.0), stone);
       capStone.position.set(x, 3.5, z);
       g.add(capStone);
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc080).multiplyScalar(1.3) }));
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc080).multiplyScalar(1.05) }));
       lamp.position.set(x, 3.9, z);
       g.add(lamp);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5 }));
@@ -483,6 +487,7 @@ export class ParkEntrance {
     // Lights: present while anyone could be looking at the plaza.
     this.keyLight.intensity = damp(this.keyLight.intensity, 70 * nearPlaza, 3, dt);
     this.fill.intensity = damp(this.fill.intensity, 26 * nearPlaza, 3, dt);
-    this.keyLight.shadow.autoUpdate = nearPlaza > 0.02;
+    // Freeze the shadow only once it has been rendered at least once (otherwise the sampler has no depth map).
+    this.keyLight.shadow.autoUpdate = nearPlaza > 0.02 || !this.keyLight.shadow.map;
   }
 }

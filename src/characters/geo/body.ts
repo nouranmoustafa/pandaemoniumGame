@@ -96,7 +96,7 @@ export class BodyBuilder {
     const hd = r.bindPos.get('head')!;
     const w = 0.037 * H;
     const rings: Ring[] = [
-      { y: nb.y - 0.035 * H, rx: w * 1.9, zf: w * 1.3, zb: w * 1.5, cz: nb.z },
+      { y: nb.y - 0.04 * H, rx: w * 1.45, zf: w * 1.15, zb: w * 1.1, cz: nb.z },
       { y: nb.y, rx: w * 1.25, zf: w * 1.15, zb: w * 1.2, cz: nb.z },
       { y: (nb.y + hd.y) / 2, rx: w, zf: w * 1.08, zb: w, cz: (nb.z + hd.z) / 2 },
       { y: hd.y + 0.035 * H, rx: w * 1.06, zf: w * 1.1, zb: w * 1.05, cz: hd.z + 0.004 * H },
@@ -236,7 +236,7 @@ export class BodyBuilder {
       { y: wr.y + 0.004 * H, rx: R(0.019), zf: R(0.02), zb: R(0.02), cx: wr.x, cz: wr.z },
     ];
     const g = loft(rings, { segments: 18, subdiv: 2 });
-    skinByDistance(g, this.segs(['chest', `shoulder${s}`, `elbow${s}`, [`wrist${s}`, `middle1${s}` as BoneName]]), 6);
+    skinByDistance(g, this.segs(['chest', `shoulder${s}`, `elbow${s}`, [`wrist${s}`, `middle1${s}` as BoneName]]), 4.5);
     this.add(g, slot);
     // Inside of the cuff, so the open end isn't see-through.
     const cuff = loft(
@@ -371,7 +371,7 @@ export class BodyBuilder {
         { y: an.y - 0.005 * H, rx: 0.019 * H * tw, zf: 0.02 * H * tw, zb: 0.021 * H * tw, cx: an.x, cz: an.z },
       ];
       const g = loft(rings, { segments: 22, subdiv: 2 });
-      skinByDistance(g, this.segs(['hips', `thigh${s}`, `knee${s}`, `ankle${s}`]), 5);
+      skinByDistance(g, this.segs(['hips', `thigh${s}`, `knee${s}`, `ankle${s}`]), 4);
       this.add(g, 'legs');
     }
   }

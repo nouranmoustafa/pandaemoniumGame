@@ -272,9 +272,9 @@ export class Prologue {
     v.updateCinematic(dt, this.vSpeed);
     // Keep the phone's screen turned to her eyes (or our lens) while she reads.
     const reading = this.director.current === 'phone' || this.director.current === 'phone-reply';
-    const aim = this.eyesOf(v.character, this.eyes);
+    const aim = v.eyesWorld(this.eyes);
     if (reading) aim.lerp(this.director.out.pos, 0.75);
-    v.character.aimPhone(aim, v.performer.phone);
+    v.aimPhone(aim, v.performer.phone);
   }
 
   // -------------------------------------------------------------- the script
@@ -284,9 +284,9 @@ export class Prologue {
     const O = this.friend('odette').perf;
     const J = this.friend('juno').perf;
     const W = this.friend('wren').perf;
-    const vEyes = () => this.eyesOf(this.visitor.character, new THREE.Vector3());
+    const vEyes = () => this.visitor.eyesWorld(new THREE.Vector3());
     const eyes = (p: Performer) => this.eyesOf(p.character, new THREE.Vector3());
-    const sound = (id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send') => this.bus.emit('prologue:sound', { id });
+    const sound = (id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' | 'laugh') => this.bus.emit('prologue:sound', { id });
     return [
       // --- A normal evening ---
       { at: 0.3, run: () => (V.express({ smile: 0.35 }), V.lookAt(eyes(J), 0.9), O.lookAt(vEyes(), 1)) },
@@ -296,16 +296,23 @@ export class Prologue {
       { at: 7.6, run: () => (J.play('story', 1), J.lookAt(vEyes(), 1), V.lookAt(eyes(J), 0.9)) },
       // Laughter. Odette smiles, but only just; she watches the Visitor instead.
       { at: 9.0, run: () => (V.play('laugh', 1), J.play('laugh', -1), W.play('laugh', 1), V.express({ laugh: 0.9 }, 9), J.express({ laugh: 1 }, 9), W.express({ laugh: 0.7 }, 9), O.express({ smile: 0.3 }, 3), O.lookAt(vEyes(), 1)) },
+      { at: 9.05, run: () => sound('laugh') },
       { at: 9.3, run: () => (O.stare = true) },
       // Everyone stops laughing — except Juno's smile, which stays exactly where it was.
       { at: 10.4, run: () => (V.express({ smile: 0.3 }, 5), W.express({ smile: 0.15 }, 5), J.express({ laugh: 1 }, 30)) },
       { at: 11.1, run: () => (V.play('tilt', 1), V.lookAt(eyes(O), 0.9)) },
+      // Odette finds the lens, and holds it a beat too long.
+      { at: 11.0, run: () => (O.lookAt(this.director.out.pos.clone(), 1), (O.stare = true)) },
+      { at: 12.75, run: () => O.lookAt(vEyes(), 1) },
       { at: 12.5, run: () => (J.express({}, 30), J.faceRate = 30) },
       { at: 12.6, run: () => (J.express({ smile: 0.15 }, 5), W.play('talk', 1), V.lookAt(eyes(W), 0.9)) },
       // Wren glances toward the gardens; her shadow takes a moment longer.
-      { at: 13.0, run: () => (this.twin.lag = 0.38, W.lookAt(new THREE.Vector3(-18, 1.7, -2), 1)) },
-      { at: 14.2, run: () => W.lookAt(vEyes(), 0.9) },
-      { at: 14.9, run: () => (this.twin.lag = 0) },
+      // In the wide shot, under the low moon: Wren touches her hair and glances at the gardens.
+      // Her long shadow does the same — a little over half a second later.
+      { at: 3.9, run: () => (this.twin.lag = 0.6) },
+      { at: 4.1, run: () => (W.play('hairTuck', -1), W.lookAt(new THREE.Vector3(-18, 1.7, -2), 1)) },
+      { at: 5.9, run: () => W.lookAt(vEyes(), 0.9) },
+      { at: 6.8, run: () => (this.twin.lag = 0) },
       // Odette looks at the Visitor's pocket — before the phone makes a sound.
       { at: 14.35, run: () => (O.stare = false, O.lookAt(this.visitor.character.getBoneWorld('hips', new THREE.Vector3()).add(new THREE.Vector3(0.1, 0.0, 0.2)), 1)) },
       // --- The phone ---
@@ -317,7 +324,9 @@ export class Prologue {
       { at: APP_AT + APP_BEATS.match, run: () => V.express({ surprise: 0.45, smile: 0.35 }, 5) },
       { at: APP_AT + APP_BEATS.message, run: () => (V.express({ smile: 0.45, surprise: 0.15 }, 4), J.play('tilt', -1)) },
       // Reaction: pleased, curious — the smile she tries not to show her friends.
+      { at: 21.4, run: () => (V.phoneLift = 0.4) },
       { at: 21.6, run: () => (V.express({ smile: 0.85 }, 3.5), V.play('hairTuck', 1), V.lookAt(eyes(J), 0.55)) },
+      { at: 23.0, run: () => (V.phoneLift = 1) },
       { at: 22.8, run: () => V.lookAt(eyes(O), 0.7) },
       { at: 23.3, run: () => (V.lookAt(null), (V.typing = 1)) },
       { at: APP_AT + APP_BEATS.sent, run: () => (sound('send'), (V.typing = 0)) },
@@ -362,7 +371,7 @@ export class Prologue {
 
   private shots(): Shot[] {
     const v = this.visitor;
-    const vEyes = (out: THREE.Vector3) => v.character.getEyesWorld(out);
+    const vEyes = (out: THREE.Vector3) => v.eyesWorld(out);
     const vPos = () => v.position;
     const f = (o: number, eh = 0) => {
       const h = v.heading;
@@ -440,7 +449,7 @@ export class Prologue {
         blend: 1.4,
         frame: (_t, o) => {
           vEyes(E);
-          v.character.phoneScreen.getWorldPosition(A);
+          v.phoneScreenWorld(A);
           o.pos.copy(E).add(f(-0.3)).add(left(-0.4)).add(new THREE.Vector3(0, 0.12, 0));
           o.look.copy(A);
           o.fov = 27;
@@ -453,8 +462,8 @@ export class Prologue {
         blend: 0.7,
         frame: (_t, o) => {
           vEyes(E);
-          o.pos.copy(E).add(left(-0.8)).add(f(0.15)).add(new THREE.Vector3(0, -0.02, 0));
-          o.look.copy(E).add(new THREE.Vector3(0, -0.1, 0));
+          o.pos.copy(E).add(left(-0.85)).add(f(0.35)).add(new THREE.Vector3(0, -0.07, 0));
+          o.look.copy(E).add(new THREE.Vector3(0, -0.04, 0));
           o.fov = 28;
         },
       },
@@ -487,7 +496,7 @@ export class Prologue {
         blend: 0.8,
         frame: (_t, o) => {
           vEyes(E);
-          v.character.phoneScreen.getWorldPosition(A);
+          v.phoneScreenWorld(A);
           o.pos.copy(E).add(f(-0.3)).add(left(-0.4)).add(new THREE.Vector3(0, 0.12, 0));
           o.look.copy(A);
           o.fov = 27;

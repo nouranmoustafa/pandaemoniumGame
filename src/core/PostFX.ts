@@ -67,6 +67,9 @@ export class PostFX {
   /** 0..1 — the warm evening grade. */
   setWarmth(w: number): void {
     this.grade.uniforms.uWarm.value = w;
+    // The plaza's lamps sit close to the lens in the prologue: gentler, tighter bloom there.
+    this.bloom.strength = 0.75 - w * 0.33;
+    this.bloom.threshold = 0.82 + w * 0.08;
   }
 
   pulseHurt(): void {

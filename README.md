@@ -22,7 +22,7 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Debug: `?skipintro` goes straight to the chase. `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
+Debug: `?skipintro` goes straight to the chase. `?visitor=test` plays the Visitor as the CC0 GLB test model (`?visitor=generated` forces the generated one). `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
 
 ## Modes and controls
 
@@ -33,7 +33,7 @@ From the title screen, choose **PLAY ALONE** (vs the AI Demon) or **LOCAL 1V1**.
 | Visitor | **↑ / W**, **↓ / S** | Change lanes. Steering during a gust also braces against it. |
 | Visitor | **Space** (tap) | Run faster; stop tapping and she tires back to a jog |
 | Demon (1v1) | **Mouse** | Click a power (Grass, Wind, Water, Fire), then click the lit path ahead of her. Right-click cancels. |
-| Either | **Esc / P** | Pause. **R** restarts (paused or end screen). **Enter** plays solo from the title. |
+| Either | **Esc / P** | Pause. **R** retries the chase from the gate (paused or end screen). The pause menu and end card also offer **Replay Story** (the prologue again); both keep the selected mode. **Enter** plays solo from the title. |
 | Intro | **Hold Esc** (1 s) | Skip the prologue. During the intro, Esc only skips; **P** pauses. |
 
 In 1v1, the Demon wins if she is caught 5 times before she reaches the house; otherwise the Visitor wins.
@@ -98,10 +98,20 @@ How the characters are built:
 - **Look-at and blinks.** Look-at leads with the eyes. Blinking is automatic.
 - **Chase expressions.** Her face reacts in the chase: concern, effort, fear on a catch, dread as the Demon grows anxious, relief on a dodge.
 
-**GLB pipeline** (`characters/gltf/`):
-- `GltfAvatar` loads a rigged GLB and maps humanoid bones (Mixamo, UE/Quaternius, Rigify, VRM).
-- It drives the clips with an `AnimationMixer` (speed-blended locomotion plus one-shot gestures) and maps expressions onto the model's morph targets.
-- It is validated in `?lab&glb` with a CC0 test model. `public/characters/README.md` specifies exactly what to supply, and `CREDITS.md` tracks the licences.
+**GLB characters in the game** (`characters/gltf/`, Stage 3.1):
+- A rigged GLB can be the Visitor's actual body, in the prologue and the chase. `?visitor=test` plays with the CC0 RobotExpressive test model. A `CAST_ASSETS.visitor` entry in `characters/gltf/manifest.ts` uses a supplied model automatically. If the file is missing or fails to load, the game falls back to the generated Visitor.
+- `GltfAvatar` maps humanoid bones (Mixamo, UE/Quaternius, Rigify, VRM) and normalises the model to the game's height, with its feet on the ground. It drives the `AnimationMixer` from the `VisitorController`:
+  - idle / walk / run / sprint blend by real speed, with playback rate matched to that speed;
+  - slide is a held clip;
+  - stumble → recover is triggered by catches;
+  - a dodge clip plays on lane changes (if the model has one);
+  - gestures map from the prologue script.
+- Leans for dodges, wind and slope are applied procedurally on the holder, so they work on any rig.
+- Expressions drive whatever morph targets exist (ARKit, VRM or simple names).
+- Each clip's weight is set explicitly every frame, so nothing snaps.
+- Outfit layers can be toggled by mesh-name prefix (`setOutfitLayers`), ready for costume changes.
+- The generated character keeps running hidden as the performance driver (gesture timing, gaze, face), so cameras and the script work with either body.
+- `public/characters/README.md` specifies what to supply, and `CREDITS.md` tracks licences.
 
 ## The Demon
 
@@ -196,7 +206,9 @@ src/
 ## Honest notes
 
 - **The characters are skinned rigs, but generated, not sculpted.** They are original and fully code-generated: real skeletons, skinned meshes and morph targets. They are not artist-modelled assets, so faces and cloth read as stylized puppets rather than film-quality models. The GLB pipeline is ready for supplied models (see `public/characters/README.md`).
-- **Animation is procedural and authored in code**, not mocap or keyframed clips. `AnimationMixer` drives supplied GLB clips; it isn't used for the generated cast.
+- **Animation is procedural and authored in code**, not mocap or keyframed clips. `AnimationMixer` drives GLB bodies; it isn't used for the generated cast.
+- **There is no recorded audio yet.** All sound is synthesized. A sample slot (`public/audio/README.md`) takes licensed recordings; laughter is left as a murmur swell until a real recording is supplied.
+- **The GLB test model is a robot**, used only to prove the pipeline. Its oversized head breaks the humanoid eye anchor, so the phone close-ups frame badly with it. A humanoid model fits the anchors.
 - **There is no cloth or hair simulation.** Coat panels, hair and scarves are spring-driven bone chains.
 - **All textures and sounds are generated at runtime.** There are no asset files, and no voice acting: the Demon "speaks" in engraved text.
 - **Puddles use `MeshPhongMaterial`, deliberately.** It samples the equirect night panorama directly. `MeshStandardMaterial` would trigger Three.js's PMREM prefilter, whose shader produced an (harmless) HLSL precision warning on Windows/ANGLE and a compile stall mid-chase. All hazard shaders are also precompiled at load (`DemonAbilitySystem.prewarm`).

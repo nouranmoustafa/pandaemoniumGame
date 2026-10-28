@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { COURSE, MODE_TUNING } from '../../config';
 import { CinematicDirector, type ShotFrame } from '../../camera/CinematicDirector';
+import { CAST } from '../../characters/cast';
+import { GltfAvatar } from '../../characters/gltf/GltfAvatar';
+import { visitorAsset } from '../../characters/gltf/manifest';
 import { damp, smoothstep } from '../../core/math';
 import { DemonAbilitySystem } from '../../demon/abilities/DemonAbilitySystem';
 import { AIDemonDirector } from '../../demon/AIDemonDirector';
@@ -59,6 +62,8 @@ export class ParkChapter implements Chapter {
   /** False during the title backdrop and the prologue. */
   chaseActive = false;
   private titleFrame: ShotFrame | null = null;
+  /** The Visitor's body: generated, or a GLB (loading / ready / failed → generated fallback). */
+  bodyStatus: 'generated' | 'loading' | 'glb' | 'failed' = 'generated';
   /** Called once, when the prologue hands her to the player. */
   onPrologueHandoff: () => void = () => {};
 
@@ -116,6 +121,7 @@ export class ParkChapter implements Chapter {
     this.panel = new DemonPanel(s.canvas, s.camera.camera, this.abilities, this.human, this.overlay, this.env.pavement, () => this.obstacleCtx);
     this.prologue = new Prologue(s.scene, s.bus, this.env, this.visitor, this.cine);
     this.prologue.onHandoff = () => this.onPrologueHandoff();
+    this.loadVisitorBody();
 
     // Registered once, here — never on start/reset, so replays don't stack handlers.
     this.unsub.push(
@@ -135,6 +141,23 @@ export class ParkChapter implements Chapter {
         if (!active) s.camera.shake(0.3);
       }),
     );
+  }
+
+  /** A supplied (or ?visitor=test) GLB replaces the generated body; a missing file falls back silently to it. */
+  private loadVisitorBody(): void {
+    const entry = visitorAsset();
+    if (!entry) return;
+    this.bodyStatus = 'loading';
+    const v = CAST.visitor;
+    GltfAvatar.load(entry, v.proportions.height * v.scale, import.meta.env.BASE_URL)
+      .then((avatar) => {
+        this.visitor.attachGlb(avatar);
+        this.bodyStatus = 'glb';
+      })
+      .catch((e) => {
+        console.warn(`Visitor model ${entry.url} could not be loaded; using the generated character.`, e);
+        this.bodyStatus = 'failed';
+      });
   }
 
   get director(): DemonDirector {
@@ -183,6 +206,8 @@ export class ParkChapter implements Chapter {
   }
 
   reset(): void {
+    this.s.audio.resetAmbience();
+    this.s.audio.surface = 'cobble';
     this.complete = false;
     this.chaseActive = false;
     this.titleFrame = null;
@@ -227,13 +252,25 @@ export class ParkChapter implements Chapter {
     const frame = this.prologue.active ? this.prologue.update(dt) : this.prologue.updateTitle(dt);
     if (!this.prologue.active) this.titleFrame = frame;
     if (!this.chaseActive) this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
+    this.placeFaceLight(frame);
     const r = this.prologue.grassRipple();
     this.env.rippleGrass(r.x, r.amp);
     this.env.warmth = this.warmthAt(this.visitor.position.x);
+    this.s.audio.surface = this.visitor.position.x < ENTRANCE.gateX ? 'flagstone' : 'cobble';
     this.env.setGust(0);
     this.env.setAnxiety(0);
     this.env.update(dt, this.s.camera.camera, this.visitor.position);
     this.s.audio.update(dt, { speed: 0, sliding: false, gust: 0, playing: false, peace: false, anxiety: 0, city: this.env.warmth, prologue: true });
+  }
+
+  /** Beside and a little above the lens; strong only when the camera is close to someone. */
+  private placeFaceLight(frame: ShotFrame): void {
+    const fl = this.env.entrance.faceLight;
+    const toSubject = frame.look.clone().sub(frame.pos);
+    const dist = toSubject.length();
+    const right = toSubject.clone().normalize().cross(new THREE.Vector3(0, 1, 0)).normalize();
+    fl.position.copy(frame.pos).addScaledVector(right, 1.1).add(new THREE.Vector3(0, 0.6, 0)).addScaledVector(toSubject.normalize(), -0.4);
+    fl.intensity = 1.1 * smoothstep(4, 1.2, dist) * this.env.warmth;
   }
 
   /** The ordinary evening holds on the plaza and drains away inside the gate. */
@@ -276,6 +313,7 @@ export class ParkChapter implements Chapter {
     this.env.setAnxiety(this.mind.anxiety);
     this.env.warmth = this.warmthAt(c.x);
     this.env.rippleGrass(0, 0);
+    this.env.entrance.faceLight.intensity = 0;
     this.visitor.dread = this.mind.anxiety;
     // Her friends stay at the gate; once she's well inside, they're out of every shot.
     const hide = c.x > ENTRANCE.gateX + 14;

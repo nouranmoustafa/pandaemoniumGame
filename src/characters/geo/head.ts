@@ -79,7 +79,7 @@ function sculpt(x: number, y: number, z: number, f: FaceShape): [number, number,
   let prof = y > tipY ? 0.012 + 0.11 * n * Math.pow(t, 1.8) : 0.122 * n * sstep(tipY - 0.08, tipY, y);
   prof += 0.026 * n * gauss(Math.hypot(x, y - tipY - 0.01), 0.05);
   z += prof * gauss(x, width) * front;
-  z += 0.03 * n * gauss(Math.hypot(ax - 0.095 * f.noseWidth, y - tipY + 0.035), 0.045) * front;
+  z += 0.016 * n * gauss(Math.hypot(ax - 0.09 * f.noseWidth, y - tipY + 0.035), 0.042) * front;
   // Philtrum and lips.
   z += 0.012 * gauss(y + 0.4, 0.04) * gauss(x, 0.06) * front;
   const L = f.lips;
@@ -204,6 +204,12 @@ export function buildHead(R: number, center: THREE.Vector3, f: FaceShape, skin: 
   const eyeGeo = new THREE.SphereGeometry(eyeR, 32, 24);
   eyeGeo.rotateX(Math.PI / 2); // texture pole (iris) faces +Z
   const upperGeo = lidGeometry(eyeR * 1.07, true);
+  // Upper lashes: a thin dark fringe along the lid edge, flicking outward at the corners.
+  const lashGeo = new THREE.TorusGeometry(eyeR * 1.1, eyeR * 0.05, 4, 24, Math.PI * 0.9);
+  lashGeo.rotateX(Math.PI / 2);
+  lashGeo.rotateY(-Math.PI * 0.05);
+  lashGeo.scale(1, 0.6, 1.08);
+  const lashMat = new THREE.MeshStandardMaterial({ color: 0x0c0708, roughness: 0.7 });
   const lowerGeo = lidGeometry(eyeR * 1.05, false);
   const eyes: THREE.Mesh[] = [];
   const groups: THREE.Group[] = [];
@@ -218,6 +224,7 @@ export function buildHead(R: number, center: THREE.Vector3, f: FaceShape, skin: 
     const eye = new THREE.Mesh(eyeGeo, eyeMat);
     grp.add(eye);
     const up = new THREE.Mesh(upperGeo, lidMat);
+    up.add(new THREE.Mesh(lashGeo, lashMat));
     const low = new THREE.Mesh(lowerGeo, lidMat);
     up.castShadow = false;
     grp.add(up, low);

@@ -36,7 +36,7 @@ export interface GameEvents {
   'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor' };
   /** Prologue story beats and its sound cues (audio stays decoupled from the script). */
   'prologue:beat': { beat: string };
-  'prologue:sound': { id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' };
+  'prologue:sound': { id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' | 'laugh' };
 }
 
 type Handler<T> = (payload: T) => void;

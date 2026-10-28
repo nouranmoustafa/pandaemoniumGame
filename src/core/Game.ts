@@ -30,7 +30,7 @@ interface Fade {
 /**
  * Owns the renderer, the main loop and top-level flow:
  *
- *   title → prologue → playing ⇄ paused → ended → (restart | title)
+ *   title → prologue → playing ⇄ paused → ended → (retry chase | replay story | title)
  *
  * alongside a story-state machine (TITLE_SCREEN … STAGE_2_END) that systems
  * hook for enter/exit work. Transitions that fade run on the frame clock —
@@ -78,7 +78,8 @@ export class Game {
     this.audio = new AudioEngine(this.bus);
     this.ui = new UI({
       onPlay: (mode) => this.play(mode),
-      onRestart: () => this.restart(),
+      onRetryChase: () => this.restart('chase'),
+      onReplayStory: () => this.restart('story'),
       onResume: () => this.resume(),
       onQuit: () => this.toTitle(),
       onToggleMute: () => {
@@ -201,7 +202,7 @@ export class Game {
         if (s === 'playing' || s === 'prologue') this.pause();
         else if (s === 'paused') this.resume();
       } else if (a === 'restart' && (s === 'ended' || s === 'paused')) {
-        this.restart();
+        this.restart('chase');
       } else if (a === 'confirm' && this.story.is('MODE_SELECTION')) {
         this.play('single');
       }
@@ -254,15 +255,22 @@ export class Game {
     });
   }
 
-  restart(): void {
+  /**
+   * Start over. Both paths go back through the title state (which resets
+   * the chapter: Demon, cooldowns, hazards, tricks, timelines, the cast) and
+   * keep the selected mode. 'chase' resumes at the gate; 'story' replays the prologue.
+   */
+  restart(from: 'chase' | 'story' = 'chase'): void {
     if (this.fade) return;
     this.audio.unlock();
     this.runFade(0.45, 0.9, () => {
       this.input.endFrame();
-      // A fresh run: back through the title state (which resets the chapter), then the prologue again.
       this.states.go('title');
       this.ui.showTitle(false);
-      this.beginRun();
+      if (from === 'chase') {
+        this.chapter.skipPrologue();
+        this.states.go('playing');
+      } else this.beginRun();
     });
   }
 

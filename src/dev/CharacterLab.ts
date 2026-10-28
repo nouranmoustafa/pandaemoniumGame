@@ -21,6 +21,7 @@ export class CharacterLab {
   frames = 0;
   /** The imported GLB (?lab&glb), for validating the asset pipeline. */
   glb: GltfAvatar | null = null;
+  glbSpeed = 0;
   private clock = new THREE.Timer();
   private expr: ExpressionName = 'neutral';
   private blink = 0;
@@ -60,9 +61,8 @@ export class CharacterLab {
     });
     this.view('all');
     if (new URLSearchParams(location.search).has('glb')) {
-      void GltfAvatar.load(import.meta.env.BASE_URL + PIPELINE_TEST.url).then((a) => {
+      void GltfAvatar.load(PIPELINE_TEST, 1.66 * 1.14, import.meta.env.BASE_URL).then((a) => {
         a.object.position.set(2.6, 0, 0);
-        a.object.scale.setScalar(0.42);
         this.scene.add(a.object);
         this.glb = a;
       });
@@ -142,7 +142,7 @@ export class CharacterLab {
     const face = mixExpression({ [this.expr]: 1 });
     if (this.glb) {
       this.glb.setFace(face, this.blink);
-      this.glb.updateSecondary(dt, { velocity: new THREE.Vector3(), accel: new THREE.Vector3(), wind: 0, slide: 0 });
+      this.glb.drive(dt, { speed: this.glbSpeed, stumbleTime: -1, stumbleDuration: 1, slide: 0, laneVel: 0, windLean: 0, slope: 0, arriving: false });
     }
     for (const c of this.chars.values()) c.updateFace(1 / 60, face, this.blink);
     this.renderer.render(this.scene, this.camera);
