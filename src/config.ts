@@ -50,7 +50,8 @@ export const COURSE = {
   hillCrest: 292,
   pavementEnd: 548,
   finish: 540,
-  houseX: 612,
+  /** The house stands right where the slide ends (Stage 4: she goes in). */
+  houseX: 578,
   houseZ: -6,
 };
 

@@ -86,6 +86,17 @@ export class Visitor {
     this.character.object.visible = true;
   }
 
+  /**
+   * Stage 4 dresses the generated body (the gown is built on its skeleton),
+   * so while the house has her, a GLB body steps aside for it.
+   */
+  useGeneratedBody(on: boolean): void {
+    if (!this.glb) return;
+    this.glb.object.visible = !on;
+    if (this.glbPhone) this.glbPhone.visible = !on && this.character.phone.visible;
+    this.character.object.visible = on;
+  }
+
   /** The script's gestures, as the GLB's own clips (when it has them). */
   private glbGesture(g: GestureName): void {
     if (!this.glb) return;

@@ -24,6 +24,7 @@ import { Inscriptions } from '../../world/Inscriptions';
 import { ENTRANCE } from '../../world/ParkEntrance';
 import { TargetingOverlay } from '../../world/TargetingOverlay';
 import type { Chapter, ChapterServices } from '../Chapter';
+import { HouseSequence } from '../house/HouseSequence';
 import { HANDOFF_AT, Prologue } from '../prologue/Prologue';
 import { CourseDirector } from './CourseDirector';
 import { PARK_COURSE } from './course';
@@ -41,6 +42,10 @@ export type GameMode = 'single' | 'versus';
  * Stage 3: the chapter opens on the prologue (friends, the match, the walk
  * in), played identically in both modes. The Demon's systems don't run at
  * all until the chase begins; the prologue hands her over at the gate.
+ *
+ * Stage 4: the chase no longer ends at the door. When she arrives, the
+ * house sequence takes over (the threshold, the hall, the gown); the
+ * chapter is complete when it ends.
  */
 export class ParkChapter implements Chapter {
   readonly id = 'park' as const;
@@ -56,6 +61,7 @@ export class ParkChapter implements Chapter {
   readonly human: HumanDemonDirector;
   readonly panel: DemonPanel;
   readonly prologue: Prologue;
+  readonly house: HouseSequence;
   readonly cine = new CinematicDirector();
   mode: GameMode = 'single';
   complete = false;
@@ -64,6 +70,8 @@ export class ParkChapter implements Chapter {
   private titleFrame: ShotFrame | null = null;
   /** The Visitor's body: generated, or a GLB (loading / ready / failed → generated fallback). */
   bodyStatus: 'generated' | 'loading' | 'glb' | 'failed' = 'generated';
+  /** Called once, when the house takes over from the chase. */
+  onHouseBegin: () => void = () => {};
   /** Called once, when the prologue hands her to the player. */
   onPrologueHandoff: () => void = () => {};
 
@@ -121,6 +129,24 @@ export class ParkChapter implements Chapter {
     this.panel = new DemonPanel(s.canvas, s.camera.camera, this.abilities, this.human, this.overlay, this.env.pavement, () => this.obstacleCtx);
     this.prologue = new Prologue(s.scene, s.bus, this.env, this.visitor, this.cine);
     this.prologue.onHandoff = () => this.onPrologueHandoff();
+    this.house = new HouseSequence(s.scene, this.env, this.visitor, {
+      bus: s.bus,
+      input: s.input,
+      say: (text, d) => s.ui.say(text, d),
+      fade: (o, sec) => s.ui.setFade(o, sec),
+      shake: (a) => s.camera.shake(a),
+      prompt: (html) => s.ui.setPrompt(html),
+    });
+    this.house.onComplete = () => {
+      const c = this.visitor.controller;
+      this.complete = true;
+      s.bus.emit('chapter:complete', {
+        caught: c.caughtCount,
+        time: c.elapsed,
+        winner: this.mode === 'versus' ? this.versusWinner : undefined,
+        resisted: this.house.resists,
+      });
+    };
     this.loadVisitorBody();
 
     // Registered once, here — never on start/reset, so replays don't stack handlers.
@@ -217,7 +243,7 @@ export class ParkChapter implements Chapter {
     this.openingSaid = false;
     this.timeScale = 1;
     this.env.pavement.reset();
-    this.env.house.doorOpen = 0;
+    this.house.reset();
     this.env.reset();
     this.obstacles.reset();
     this.abilities.reset();
@@ -283,7 +309,30 @@ export class ParkChapter implements Chapter {
     return Math.max(0, HANDOFF_AT - this.prologue.time);
   }
 
+  /** Hold-Escape skip during the house: straight to its end. */
+  skipHouse(): void {
+    this.house.finish();
+  }
+
+  /** The house has her: only its sequence, the world and the sound run. */
+  private updateHouse(dt: number): void {
+    const frame = this.house.update(dt);
+    this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
+    this.s.camera.update(dt, this.cameraSubject());
+    const indoors = this.house.indoors;
+    if (!indoors) {
+      this.env.warmth = 0;
+      this.env.update(dt, this.s.camera.camera, this.visitor.position);
+    }
+    this.s.audio.surface = indoors ? 'flagstone' : 'cobble';
+    this.s.audio.update(dt, { speed: 0, sliding: false, gust: 0, playing: true, peace: false, anxiety: indoors ? 0.3 : this.mind.anxiety, city: 0, indoor: indoors });
+  }
+
   update(rawDt: number): void {
+    if (this.house.phase !== 'off') {
+      this.updateHouse(rawDt);
+      return;
+    }
     if (!this.chaseActive) {
       this.updateCinematic(rawDt);
       return;
@@ -362,16 +411,14 @@ export class ParkChapter implements Chapter {
       if (this.mode === 'versus') line = this.versusWinner === 'demon' ? PARK_LINES.versusDemon : PARK_LINES.versusVisitor;
       this.s.ui.say(line, 4);
     }
+    // She slows to a stop at the foot of the porch; then the house takes her.
     if (this.arriveTime >= 0) {
       this.arriveTime += dt;
-      this.env.house.doorOpen = damp(this.env.house.doorOpen, this.arriveTime > 1.2 ? 1 : 0, 1.5, dt);
-      if (this.arriveTime > 5.2 && !this.complete) {
-        this.complete = true;
-        this.s.bus.emit('chapter:complete', {
-          caught: c.caughtCount,
-          time: c.elapsed,
-          winner: this.mode === 'versus' ? this.versusWinner : undefined,
-        });
+      if (this.arriveTime > 2.4 && !this.house.active) {
+        const cam = this.s.camera.camera;
+        const look = cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(10).add(cam.position);
+        this.house.start({ pos: cam.position.clone(), look, fov: cam.fov });
+        this.onHouseBegin();
       }
     }
   }

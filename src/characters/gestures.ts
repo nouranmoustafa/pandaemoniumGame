@@ -187,6 +187,77 @@ export const GESTURES = {
       p.add('head', Math.sin(t * 1.5) * 0.03 * w, 0, 0);
     },
   },
+  /**
+   * Stage 4: dragged by the wrist. The held arm is drawn forward and up,
+   * the other swings back for balance, and she leans away from the pull.
+   * Meant to be played with a long `extend` and stopped.
+   */
+  pulled: {
+    duration: 1.0,
+    ease: [0.18, 0.6],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const o = S(-side as 1 | -1);
+      const tug = noise1(t * 3.1, 9) * 0.12 + Math.max(0, Math.sin(t * 2.3)) * 0.08;
+      p.blendJoint(`shoulder${s}`, -1.25 - tug, side * 0.1, side * 0.12, w);
+      p.blendJoint(`elbow${s}`, -0.2, 0, 0, w);
+      p.blendJoint(`wrist${s}`, 0.25, 0, 0, w);
+      p.blendHand(s, 0.55, 0.05, 0.3, 0, w);
+      p.blendJoint(`shoulder${o}`, 0.35, 0, -side * 0.35, w);
+      p.blendJoint(`elbow${o}`, -0.7, 0, 0, w);
+      p.blendHand(o, 0.75, 0.1, 0.5, 0, w);
+      p.add('spine', (-0.1 + tug * 0.3) * w, side * 0.12 * w, 0);
+      p.add('head', 0.12 * w, side * 0.1 * w, 0);
+    },
+  },
+  /** A sudden heave back against whatever has her (a tap of SPACE). */
+  resist: {
+    duration: 0.75,
+    ease: [0.05, 0.45],
+    apply(p, t, w) {
+      const k = Math.sin(clamp(t / 0.5, 0, 1) * Math.PI);
+      p.add('spine', -0.2 * k * w, 0, 0);
+      p.add('chest', -0.1 * k * w, 0, 0);
+      p.add('neck', 0.12 * k * w, 0, 0);
+      p.root[2] -= 0.08 * k * w;
+      for (const side of [1, -1] as const) p.blendHand(S(side), 1, 0, 0.6, 0, w * k);
+    },
+  },
+  /** Trying a door that will not open: reach, grip, two hard rattles. */
+  tryDoor: {
+    duration: 2.4,
+    ease: [0.35, 0.5],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const rattle = t > 0.8 && t < 2.0 ? Math.sin(t * 26) * 0.07 : 0;
+      p.blendJoint(`shoulder${s}`, -0.95 + rattle, side * 0.1, side * 0.05, w);
+      p.blendJoint(`elbow${s}`, -0.5, 0, 0, w);
+      p.blendJoint(`wrist${s}`, 0.1, side * -0.9, 0, w);
+      p.blendHand(s, 0.85, 0.05, 0.6, 0, w);
+      p.add('spine', (0.08 + rattle * 0.4) * w, 0, 0);
+      p.add('head', 0.1 * w, 0, 0);
+    },
+  },
+  /**
+   * Held up by the ribbons while the gown takes her: arms lifted out from
+   * her sides, palms turned forward, head tipped back a little.
+   */
+  raised: {
+    duration: 1.6,
+    ease: [0.9, 0.9],
+    apply(p, t, w) {
+      const sway = Math.sin(t * 1.3) * 0.05;
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -0.3 + sway * side, 0, side * (0.8 + sway), w);
+        p.blendJoint(`elbow${s}`, -0.35, 0, 0, w);
+        p.blendJoint(`wrist${s}`, 0, side * -0.6, side * 0.2, w);
+        p.blendHand(s, 0.12, 0.4, 0.1, 0, w);
+      }
+      p.add('neck', -0.08 * w, 0, 0);
+      p.add('head', -0.1 * w, 0, 0);
+    },
+  },
 } satisfies Record<string, GestureDef>;
 
 export type GestureName = keyof typeof GESTURES;

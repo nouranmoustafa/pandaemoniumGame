@@ -1,5 +1,5 @@
 /** Top-level flow. Pausing is a flow state; the story position is tracked separately. */
-export type GameStateId = 'title' | 'prologue' | 'playing' | 'paused' | 'ended';
+export type GameStateId = 'title' | 'prologue' | 'playing' | 'house' | 'paused' | 'ended';
 
 /**
  * Where the story is. Tracked alongside the flow so systems can react to
@@ -17,7 +17,10 @@ export type StoryState =
   | 'CHASE_GAMEPLAY'
   | 'CHASE_ESCALATION'
   | 'PAVEMENT_SLIDE'
-  | 'STAGE_2_END';
+  | 'HOUSE_THRESHOLD'
+  | 'HOUSE_INTERIOR'
+  | 'WEDDING_DRESS'
+  | 'STAGE_4_END';
 
 export interface StateHandlers<Id extends string> {
   enter?: (from: Id | null) => void;

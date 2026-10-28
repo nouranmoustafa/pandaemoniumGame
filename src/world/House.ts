@@ -3,7 +3,12 @@ import { COLORS } from '../config';
 import { mulberry32 } from '../core/math';
 import { glowTexture } from './Textures';
 
-function sidingTexture(): THREE.CanvasTexture {
+/** Height of the porch and the ground floor above the path. */
+export const HOUSE_FLOOR = 0.3;
+/** House-local X of the front wall (the door stands in it). */
+export const HOUSE_FRONT = -9.05;
+
+export function sidingTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d')!;
@@ -130,19 +135,20 @@ export class House {
       new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: 0x0b0d10, roughness: 1, fog: false }),
     );
-    hill.scale.set(42, 5.6, 40);
+    // A low mound: the porch sits at the level of the path, so she can be taken in.
+    hill.scale.set(42, 1.1, 40);
     hill.position.set(10, -0.8, 0);
     hill.receiveShadow = true;
     this.group.add(hill);
 
     // Main body — narrower at the bottom than the top.
-    const baseY = 4.8;
+    const baseY = HOUSE_FLOOR;
     block(18, 11, 13, 0, baseY, 0, 0, 0.03);
     block(20, 9, 14, 0.8, baseY + 11, -0.3, 0.04, -0.05);
     pitchedRoof(20, 14, 9, 0.8, baseY + 20, -0.3, Math.PI / 2 + 0.04, 0.9);
-    // Side wing, crooked.
-    block(9, 8, 9, -12, baseY, 2.5, -0.12, 0.06);
-    pitchedRoof(9, 9, 6, -12, baseY + 8, 2.5, -0.12, -0.6);
+    // Side wing, crooked — set back to one side so the front door stays clear.
+    block(9, 8, 9, -12, baseY, -8.6, -0.12, 0.06);
+    pitchedRoof(9, 9, 6, -12, baseY + 8, -8.6, -0.12, -0.6);
     // Tower.
     const tower = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.4, 26, 6), wall);
     tower.position.set(10.5, baseY + 13, 4);
@@ -165,7 +171,7 @@ export class House {
     }
 
     // Windows facing the path (house front faces -X, toward the Visitor).
-    const front = -9.05;
+    const front = HOUSE_FRONT;
     const rotFront = -Math.PI / 2;
     addWindow(2.0, 3.4, front, baseY + 6, -3.5, rotFront, true);
     addWindow(2.0, 3.4, front, baseY + 6, 3.5, rotFront, false);
@@ -174,7 +180,7 @@ export class House {
     addWindow(2.4, 3.6, front - 1.2, baseY + 15, 5.4, rotFront, false);
     addWindow(1.4, 2.4, 7.0, baseY + 21, 4, rotFront, true);
     addWindow(1.4, 2.6, 7.2, baseY + 14, 4, rotFront, true);
-    addWindow(1.6, 2.4, -16.6, baseY + 4.5, 2.5, rotFront - 0.12, true);
+    addWindow(1.6, 2.4, -16.6, baseY + 4.5, -8.6, rotFront - 0.12, true);
     // The attic window — a single round eye.
     const eye = new THREE.Mesh(new THREE.CircleGeometry(1.3, 24), glass.clone());
     eye.position.set(front - 0.4, baseY + 24, -0.3);
@@ -183,15 +189,15 @@ export class House {
     this.windows.push({ mesh: eye, base: 1.2, phase: 0 });
 
     // Porch, steps and the door.
-    const porch = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 9), trim);
-    porch.position.set(front - 2, baseY + 0.3, 0);
+    const porch = new THREE.Mesh(new THREE.BoxGeometry(4, baseY, 8), trim);
+    porch.position.set(front - 2, baseY / 2, 0);
+    porch.receiveShadow = true;
     this.group.add(porch);
-    for (let i = 0; i < 4; i++) {
-      const step = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 4.5), trim);
-      step.position.set(front - 4.5 - i * 1.1, baseY - 0.3 - i * 0.55, 0);
-      this.group.add(step);
-    }
-    for (const z of [-4, 4]) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(1.0, baseY / 2, 4.5), trim);
+    step.position.set(front - 4.5, baseY / 4, 0);
+    step.receiveShadow = true;
+    this.group.add(step);
+    for (const z of [-3.6, 3.6]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 5.5, 6), trim);
       post.position.set(front - 3.6, baseY + 2.9, z);
       post.rotation.x = z * 0.01;

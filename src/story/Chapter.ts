@@ -36,5 +36,5 @@ export interface Chapter {
 
 export type ChapterId = 'park' | 'house-interior' | 'wedding' | 'mirror' | 'window' | 'reveal';
 
-/** Story order. Only 'park' is implemented in Stage 1. */
+/** Story order. The park chapter currently plays the prologue, the chase and the house (Stage 4). */
 export const CHAPTER_ORDER: ChapterId[] = ['park', 'house-interior', 'wedding', 'mirror', 'window', 'reveal'];

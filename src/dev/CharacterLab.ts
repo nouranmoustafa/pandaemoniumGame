@@ -5,6 +5,7 @@ import { type ExpressionName, mixExpression } from '../characters/Expression';
 import { GeneratedCharacter } from '../characters/GeneratedCharacter';
 import { GltfAvatar } from '../characters/gltf/GltfAvatar';
 import { PIPELINE_TEST } from '../characters/gltf/manifest';
+import { WeddingDress } from '../characters/WeddingDress';
 import { Pose } from '../visitor/Pose';
 
 /**
@@ -22,6 +23,8 @@ export class CharacterLab {
   /** The imported GLB (?lab&glb), for validating the asset pipeline. */
   glb: GltfAvatar | null = null;
   glbSpeed = 0;
+  /** The house's gown on the Visitor (built on first use). */
+  wedding: WeddingDress | null = null;
   private clock = new THREE.Timer();
   private expr: ExpressionName = 'neutral';
   private blink = 0;
@@ -102,6 +105,14 @@ export class CharacterLab {
     }
   }
 
+  /** Wedding gown on the Visitor: reveal 0..1, veil 0..1 (descent). */
+  dress(reveal: number, veil = 0): void {
+    const v = this.chars.get('visitor')!;
+    this.wedding ??= new WeddingDress(v, this.scene);
+    this.wedding.reveal = reveal;
+    this.wedding.veilDrop = veil;
+  }
+
   setExpression(e: ExpressionName): void {
     this.expr = e;
   }
@@ -145,6 +156,7 @@ export class CharacterLab {
       this.glb.drive(dt, { speed: this.glbSpeed, stumbleTime: -1, stumbleDuration: 1, slide: 0, laneVel: 0, windLean: 0, slope: 0, arriving: false });
     }
     for (const c of this.chars.values()) c.updateFace(1 / 60, face, this.blink);
+    this.wedding?.update(dt);
     this.renderer.render(this.scene, this.camera);
     this.frames++;
   }

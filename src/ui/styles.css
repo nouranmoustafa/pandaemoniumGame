@@ -155,6 +155,8 @@ html, body {
   pointer-events: none;
 }
 .hint.show { opacity: 1; }
+/* Stage 4: sits just above the cinematic bars. */
+.hint.prompt { bottom: 16vh; transition: opacity 0.5s ease; }
 .hint span { color: var(--amber); }
 
 .subtitle {

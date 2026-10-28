@@ -4,6 +4,20 @@ import { type BoneName, type BoneSegment, type CharacterRig, FINGERS, type Side 
 import { type Influences, skinByDistance, skinRigid } from '../rig/skinning';
 import { ellipsoid, loft, type Ring } from './loft';
 
+interface SkirtOptions {
+  /** Extra back length running along the floor (fraction of height). */
+  train?: number;
+  /** Lining slot name; null for none. */
+  liningSlot?: string | null;
+  fold?: number;
+  folds?: number;
+}
+
+interface BuiltSkirt {
+  rings: Ring[];
+  geo: THREE.BufferGeometry;
+}
+
 /** A skinned piece of geometry and the material slot it belongs to. */
 export interface Part {
   geo: THREE.BufferGeometry;
@@ -85,6 +99,114 @@ export class BodyBuilder {
     if (this.outfit.skirt) this.skirt(this.outfit.skirt, this.outfit.skirt.length, this.outfit.skirt.flare, 0, 'skirt', 0.55);
     if (this.outfit.scarf) this.scarf(this.outfit.scarf);
     return this.parts;
+  }
+
+  /**
+   * The wedding gown, on the same skeleton as her everyday clothes: a fitted
+   * bodice, a high lace collar, long sleeves ending in lace bells, and a
+   * floor-length skirt with a short train. Slots: 'gown' (silk), 'gownLace'
+   * (an overlay whose pattern and asymmetric sweep come from its material),
+   * 'gownTrim' (the sash), 'gownPearl', 'gownLining'.
+   */
+  buildGown(): Part[] {
+    const r = this.rig;
+    const H = this.H;
+    const infl = 0.0125 * H;
+    // Bodice: from under the skirt's waistband to the base of the neck.
+    const bodice = loft(this.torsoRings(infl, 0.16, 0.97), { segments: 40, subdiv: 3 });
+    skinByDistance(bodice, this.segs(['hips', 'spine', 'chest', 'neck', ['shoulderL', 'elbowL'], ['shoulderR', 'elbowR']]), 4);
+    this.add(bodice, 'gown');
+    // Lace over the bodice, a hair proud of the silk.
+    const bl = loft(this.torsoRings(infl + 0.0028 * H, 0.36, 0.97), { segments: 40, subdiv: 3 });
+    skinByDistance(bl, this.segs(['hips', 'spine', 'chest', 'neck', ['shoulderL', 'elbowL'], ['shoulderR', 'elbowR']]), 4);
+    this.add(bl, 'gownLace');
+    // High collar of lace, up the throat.
+    const nb = r.bindPos.get('neck')!;
+    const hd = r.bindPos.get('head')!;
+    const w = 0.037 * H;
+    const cr: Ring[] = [
+      { y: nb.y - 0.034 * H, rx: 0.07 * H + infl, zf: 0.046 * H + infl, zb: 0.05 * H + infl, cz: -0.006 * H },
+      { y: nb.y - 0.008 * H, rx: w * 1.3 + 0.007 * H, zf: w * 1.2 + 0.007 * H, zb: w * 1.25 + 0.007 * H, cz: nb.z },
+      { y: (nb.y + hd.y) / 2, rx: w + 0.006 * H, zf: w * 1.08 + 0.006 * H, zb: w + 0.006 * H, cz: (nb.z + hd.z) / 2 },
+      { y: (nb.y + hd.y) / 2 + 0.016 * H, rx: w * 1.06 + 0.008 * H, zf: w * 1.12 + 0.008 * H, zb: w * 1.04 + 0.008 * H, cz: (nb.z + hd.z) / 2 },
+    ];
+    const collar = loft(cr, { segments: 28, subdiv: 2 });
+    skinByDistance(collar, this.segs(['chest', 'neck', 'head']), 5);
+    this.add(collar, 'gownLace');
+    for (const s of ['L', 'R'] as const) this.gownSleeve(s, infl);
+    // Floor-length skirt with a train; then the lace overskirt and the sash at the seam.
+    const legLen = r.m.hipJointY - r.m.ankleY;
+    const length = (r.m.hipJointY - 0.006 * H) / legLen;
+    this.skirt(this.outfit.top, length, 3.1, 0, 'gown', 0.2, infl, { train: 0.2, liningSlot: 'gownLining', fold: 1.25, folds: 13 });
+    this.skirt(this.outfit.top, length * 0.985, 3.1, 0, 'gownLace', 0.2, infl + 0.004 * H, { train: 0.2, liningSlot: null, fold: 1.25, folds: 13 });
+    const wy = r.m.hipJointY + 0.36 * (r.m.neckBaseY - r.m.hipJointY);
+    const br = this.torsoRings(infl + 0.005 * H).reduce((a, b) => (Math.abs(b.y - wy) < Math.abs(a.y - wy) ? b : a));
+    const sash = loft(
+      [
+        { ...br, y: wy + 0.016 * H, rx: br.rx + 0.002 * H, zf: br.zf + 0.002 * H, zb: br.zb + 0.002 * H },
+        { ...br, y: wy, rx: br.rx + 0.0045 * H, zf: br.zf + 0.0045 * H, zb: br.zb + 0.0045 * H },
+        { ...br, y: wy - 0.016 * H, rx: br.rx + 0.004 * H, zf: br.zf + 0.004 * H, zb: br.zb + 0.004 * H },
+      ],
+      { segments: 40, subdiv: 2 },
+    );
+    skinByDistance(sash, this.segs(['hips', 'spine']), 4);
+    this.add(sash, 'gownTrim');
+    // A satin rose on the left hip: off-centre, like the lace.
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const petal = ellipsoid(0.012 * H, 0.009 * H, 0.004 * H, 8, 6);
+      petal.rotateZ(a);
+      petal.rotateY(0.5);
+      petal.translate(br.rx * 0.78 + Math.cos(a) * 0.008 * H, wy + Math.sin(a) * 0.008 * H, br.zf * 0.62 + 0.006 * H);
+      skinRigid(petal, r.index('hips'));
+      this.add(petal, 'gownTrim');
+    }
+    // Pearl buttons down the front of the bodice.
+    const chestRings = this.torsoRings(infl);
+    for (let i = 0; i < 8; i++) {
+      const t = 0.42 + i * 0.07;
+      const y = r.m.hipJointY + t * (r.m.neckBaseY - r.m.hipJointY);
+      const ring = chestRings.reduce((a, b) => (Math.abs(b.y - y) < Math.abs(a.y - y) ? b : a));
+      const b = ellipsoid(0.0042 * H, 0.0042 * H, 0.0032 * H, 8, 6);
+      b.translate(0, y, ring.zf + (ring.cz ?? 0) + 0.0045 * H);
+      skinRigid(b, r.index(y > r.m.chestY ? 'chest' : 'spine'));
+      this.add(b, 'gownPearl');
+    }
+    return this.parts;
+  }
+
+  /** Long fitted silk sleeve, a little fullness at the shoulder, a lace bell over the hand. */
+  private gownSleeve(s: Side, infl: number): void {
+    const r = this.rig;
+    const H = this.H;
+    const sh = r.bindPos.get(`shoulder${s}`)!;
+    const el = r.bindPos.get(`elbow${s}`)!;
+    const wr = r.bindPos.get(`wrist${s}`)!;
+    const sx = s === 'L' ? 1 : -1;
+    const R = (v: number, puff = 1) => v * H * puff + infl;
+    const rings: Ring[] = [
+      { y: sh.y + 0.016 * H, rx: R(0.015), zf: R(0.021), zb: R(0.023), cx: sh.x - sx * 0.02 * H, cz: sh.z },
+      { y: sh.y + 0.006 * H, rx: R(0.026, 1.25), zf: R(0.028, 1.25), zb: R(0.029, 1.25), cx: sh.x - sx * 0.002 * H, cz: sh.z },
+      { y: sh.y - 0.05 * H, rx: R(0.027, 1.15), zf: R(0.027, 1.15), zb: R(0.027, 1.15), cx: sh.x, cz: sh.z },
+      { y: el.y + 0.01 * H, rx: R(0.021), zf: R(0.021), zb: R(0.023), cx: el.x, cz: el.z },
+      { y: el.y - 0.05 * H, rx: R(0.019), zf: R(0.019), zb: R(0.019), cx: el.x, cz: el.z },
+      { y: wr.y + 0.022 * H, rx: R(0.016), zf: R(0.017), zb: R(0.017), cx: wr.x, cz: wr.z },
+      { y: wr.y + 0.004 * H, rx: R(0.0175), zf: R(0.0185), zb: R(0.0185), cx: wr.x, cz: wr.z },
+    ];
+    const g = loft(rings, { segments: 18, subdiv: 2 });
+    skinByDistance(g, this.segs(['chest', `shoulder${s}`, `elbow${s}`, [`wrist${s}`, `middle1${s}` as BoneName]]), 4.5);
+    this.add(g, 'gown');
+    // The lace bell: it opens over the back of the hand.
+    const bell = loft(
+      [
+        { y: wr.y + 0.034 * H, rx: R(0.017), zf: R(0.018), zb: R(0.018), cx: wr.x, cz: wr.z },
+        { y: wr.y, rx: R(0.022), zf: R(0.024), zb: R(0.024), cx: wr.x, cz: wr.z },
+        { y: wr.y - 0.03 * H, rx: R(0.031), zf: R(0.034), zb: R(0.034), cx: wr.x - sx * 0.004 * H, cz: wr.z },
+      ],
+      { segments: 20, subdiv: 2 },
+    );
+    skinByDistance(bell, this.segs([`elbow${s}`, [`wrist${s}`, `middle1${s}` as BoneName]]), 6);
+    this.add(bell, 'gownLace');
   }
 
   // ---------------------------------------------------------------- skin
@@ -278,7 +400,7 @@ export class BodyBuilder {
    * between the thighs (so a stride carries it) and the panel bones (which
    * spring behind her as she runs).
    */
-  private skirt(_g: Garment, length: number, flare: number, open: number, slot: string, legShare: number, infl = 0): void {
+  private skirt(_g: Garment, length: number, flare: number, open: number, slot: string, legShare: number, infl = 0, opts: SkirtOptions = {}): BuiltSkirt {
     const r = this.rig;
     const H = this.H;
     const topT = 0.36;
@@ -286,6 +408,7 @@ export class BodyBuilder {
     const legLen = r.m.hipJointY - r.m.ankleY;
     const hemY = r.m.hipJointY - length * legLen;
     const base = this.torsoRings(infl + 0.004 * H);
+    const foldK = opts.fold ?? 1;
     const at = (y: number) => base.reduce((a, b) => (Math.abs(b.y - y) < Math.abs(a.y - y) ? b : a));
     const rings: Ring[] = [];
     const N = 8;
@@ -300,9 +423,17 @@ export class BodyBuilder {
         zf: Math.max(hipRing.zf, 0.07 * H) + widen * 0.9,
         zb: Math.max(hipRing.zb, 0.08 * H) + widen * 1.1,
         cz: -0.006 * H,
-        fold: 0.1 * Math.pow(t, 1.3) * (0.6 + flare * 0.4),
-        folds: 11,
+        fold: 0.1 * Math.pow(t, 1.3) * (0.6 + Math.min(flare, 1.6) * 0.4) * foldK,
+        folds: opts.folds ?? 11,
       });
+    }
+    // A train: the back of the hem runs out along the floor behind her.
+    if (opts.train) {
+      const hem = rings[rings.length - 1];
+      for (let i = 1; i <= 2; i++) {
+        const k = i / 2;
+        rings.push({ ...hem, y: hemY - (hemY - 0.003 * H) * k, rx: hem.rx + 0.02 * H * k, zf: hem.zf + 0.012 * H * k, zb: hem.zb + opts.train * H * k * k, fold: (hem.fold ?? 0) * (1 - 0.4 * k) });
+      }
     }
     // Hide the seam between bodice and skirt under the belt line.
     rings[0].rx -= 0.003 * H;
@@ -334,6 +465,8 @@ export class BodyBuilder {
       ];
     });
     this.add(g, slot);
+    const lSlot = opts.liningSlot === undefined ? 'lining' : opts.liningSlot;
+    if (lSlot === null) return { rings, geo: g };
     // Lining so the inside of the hem reads as cloth, not a hole.
     const lining = loft(
       rings.slice(-3).map((x) => ({ ...x, rx: x.rx - 0.003 * H, zf: x.zf - 0.003 * H, zb: x.zb - 0.003 * H })),
@@ -345,7 +478,8 @@ export class BodyBuilder {
     skinByDistance(lining, [], 1, () => [[hips, 1]]);
     // Re-skin the lining with the skirt's own weights by nearest skirt vertex.
     copyNearestWeights(lining, g);
-    this.add(lining, 'lining');
+    this.add(lining, lSlot);
+    return { rings, geo: g };
   }
 
   private legs(): void {

@@ -4,7 +4,11 @@ A cinematic 3D psychological horror chase with dark satire, built with **Three.j
 
 A young woman goes to an old park at night to meet someone from a dating app. The park comes alive and herds her toward a haunted house. The Demon behind it is intelligent, sarcastic, and increasingly anxious that she might get away.
 
-> **Stage 3 (this build): the prologue and a new cast.** The game now opens on a 43-second cinematic. Four friends talk outside the gardens at dusk. The Visitor gets a match on a dating app ("Meet me by the old garden house?"), says goodbye, and walks in through the gate while the evening drains away around her. The camera settles behind her and the chase begins, with no cut.
+> **Stage 4 (this build): the house.** The chase no longer stops at the door. White silk ribbons reach out of the doorway, take her by the wrists and waist, and draw her inside; the door slams. The front hall is laid out as a wedding with no guests: empty chairs, a crimson aisle, candles that light themselves, a dead-rose arch and a tall mirror under a sheet. The ribbons walk her down the aisle, and under the arch the wedding gown grows over her while her coat dissolves. The veil settles, her face is made to smile, and the sheet slips off the mirror. She can pull back (SPACE) the whole way. It changes nothing, but the house keeps count.
+>
+> Stage 3 is on branch `stage-3`.
+
+> **Stage 3: the prologue and a new cast.** The game now opens on a 43-second cinematic. Four friends talk outside the gardens at dusk. The Visitor gets a match on a dating app ("Meet me by the old garden house?"), says goodbye, and walks in through the gate while the evening drains away around her. The camera settles behind her and the chase begins, with no cut.
 >
 > The Visitor and her three friends are new, original, skinned characters. Stage 2's chase, Demon, powers, tricks and local 1v1 are unchanged.
 >
@@ -22,7 +26,7 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Debug: `?skipintro` goes straight to the chase. `?visitor=test` plays the Visitor as the CC0 GLB test model (`?visitor=generated` forces the generated one). `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
+Debug: `?house` starts at the foot of the porch, so Stage 4 begins at once. `?skipintro` goes straight to the chase. `?visitor=test` plays the Visitor as the CC0 GLB test model (`?visitor=generated` forces the generated one). `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
 
 ## Modes and controls
 
@@ -35,8 +39,33 @@ From the title screen, choose **PLAY ALONE** (vs the AI Demon) or **LOCAL 1V1**.
 | Demon (1v1) | **Mouse** | Click a power (Grass, Wind, Water, Fire), then click the lit path ahead of her. Right-click cancels. |
 | Either | **Esc / P** | Pause. **R** retries the chase from the gate (paused or end screen). The pause menu and end card also offer **Replay Story** (the prologue again); both keep the selected mode. **Enter** plays solo from the title. |
 | Intro | **Hold Esc** (1 s) | Skip the prologue. During the intro, Esc only skips; **P** pauses. |
+| The house | **Space** (tap) | Pull back against the ribbons. She stops for a moment, then they take up the slack. |
+| The house | **Hold Esc** (1 s) | Skip to the gowned tableau and the end card. **P** pauses. |
 
-In 1v1, the Demon wins if she is caught 5 times before she reaches the house; otherwise the Visitor wins.
+In 1v1, the Demon wins if she is caught 5 times before she reaches the house; otherwise the Visitor wins. Both modes then play the house sequence.
+
+## Stage 4: the house
+
+### The story beats (`story/house/HouseSequence.ts`)
+
+| Beat | What happens |
+| --- | --- |
+| `HOUSE_THRESHOLD` | She stops at the foot of the porch and the door swings open on warm light. Three satin ribbons reach out: one for each wrist, one for her waist. *"Let me take your coat. And you."* They draw her up the path while she leans back against them. The camera stays ahead of her face, then swings behind her as the doorway fills the frame. |
+| `HOUSE_INTERIOR` | The door slams behind her. She turns and tries it (*"Locked. For your safety. Mostly mine."*). Candles light themselves in pairs down the aisle, and a held, slightly out-of-tune organ chord starts somewhere upstairs. The ribbons come again from the arch and walk her down the aisle between the empty chairs. |
+| `WEDDING_DRESS` | Under the arch the ribbons let go of her wrists, lift her arms and spiral down round her from the dark above. The gown grows over her from the right wrist and the waist outward, and her coat whitens and dissolves along the same field (`characters/WeddingDress.ts`). The chandelier lights. The veil settles from above. Her face is made to smile while her eyes stay frightened. The dust sheet slips from the mirror, and the glass is faintly lit: *"Not the mirror. Not yet."* |
+
+Then comes `STAGE_4_END` and the end card (*The Dress Fits*), which now also counts how many times she pulled back.
+
+**Pulling back.** Tapping SPACE while the ribbons pull makes her heave back: she stops dead, the camera jolts and the ribbons go slack, then they take up the slack again. The house remarks on her 1st, 2nd, 3rd, 5th and 8th tries (*"That's three. I'm writing them down for the speech."*).
+
+**How it's built:**
+- **The interior** (`world/HouseInterior.ts`) is a closed set, built away from the park. While she is inside, the park, sky and moon are hidden (`Environment.setIndoors`), so the two never share a frame or a light. All of its light is the house's own: aisle candles with one warm light that follows the lit pairs, a chandelier, a shadow-casting key light at the arch, and a cold spill from the windows. The wallpaper, boards and runner are painted on canvases at runtime, like everything else.
+- **The ribbons** (`world/Ribbon.ts`) are flat strips laid along a curve the script moves every frame. Each one snakes while it reaches, pulls taut when it holds, loops once round the wrist or waist, twists and flutters along its length, and is drawn out from its root by `extent`.
+- **The gown** is skinned to her own skeleton, so her face, hair and animation stay hers. The veil is a small verlet cloth that collides with her head, torso and skirt. With a GLB body attached, the generated body takes over for the house (the gown is built on it), and the GLB returns on retry.
+- **One clock per phase**, with cues that fire once each, as in the prologue. Pausing freezes it, and a skip jumps to the final tableau behind a fade.
+- **No stalls at the door.** The house's shaders, shadow passes, buffers and textures are warmed at load by rendering one offscreen frame of each. The Demon's prewarm now also compiles against the composer's render target. The screen-target variants it built before were never used, so load time roughly halved.
+
+The house itself changed to let her in: the porch now sits level with the path, the hill is a low mound, and the side wing is set back so the front door is no longer buried inside it.
 
 ## Stage 3: the prologue
 
@@ -50,7 +79,7 @@ In 1v1, the Demon wins if she is caught 5 times before she reaches the house; ot
 | `PROLOGUE_GOODBYE` | 25–31 s | She thumbs toward the park, waves and walks. From inside the gate, the friends recede behind her. |
 | `PROLOGUE_PARK_ENTRY` | 31–42.4 s | A side follow, then behind her. A lamp stutters, a swing creaks with nobody on it, a branch moves without wind, and the grass ripples against the wind. She hesitates and looks back, the camera settles into the chase framing, and she is yours. |
 
-Then come `CHASE_GAMEPLAY`, `CHASE_ESCALATION` (the Demon's mood leaves *amused*), `PAVEMENT_SLIDE` and `STAGE_2_END`. These story states run beside the flow states (`title → prologue → playing ⇄ paused → ended`) in `core/StateMachine.ts`.
+Then come `CHASE_GAMEPLAY`, `CHASE_ESCALATION` (the Demon's mood leaves *amused*), `PAVEMENT_SLIDE`, the Stage 4 beats and `STAGE_4_END`. These story states run beside the flow states (`title → prologue → playing → house → ended`; the middle three can each pause) in `core/StateMachine.ts`.
 
 **Foreshadowing**, never pointed at:
 - Juno's laugh-smile holds about two seconds after everyone else stops, then drops all at once.
@@ -88,7 +117,7 @@ How the characters are built:
 - **Face.** The brows and lips are painted from expression parameters and redrawn 12 times a second, like stop-motion replacement faces.
 - **Eyes.** Eyeballs with gaze, and eyelid shells for blinks, squints and wide eyes.
 - **Expressions.** Neutral, smile, laugh, concern, fear, surprise, distress and determined.
-- **Identity and outfit are separate.** `setOutfit()` rebuilds only the garment layers on the same skeleton, which is ready for the wedding gown.
+- **Identity and outfit are separate.** `setOutfit()` rebuilds only the garment layers on the same skeleton, and the Stage 4 gown is bound to that same skeleton.
 
 **Animation** (`visitor/VisitorAnimator.ts`, `characters/Performer.ts`, `characters/gestures.ts`):
 - **Gait.** One phase drives a walk (a stance sweep matched to stride length, so feet plant) that blends into the Stage 2 run, which is still synced to SPACE taps.
@@ -193,12 +222,13 @@ src/
   visitor/   VisitorController (★wind, traction, dodge reward) · VisitorAnimator (★wind lean/shield, slip) · Pose · avatars
   camera/    ChaseCamera
   world/     Environment (★mood, tree sway) · Pavement (★inclines) · Streetlights (★watching, conferring)
-             House (★glow/flare) · ★Inscriptions · ★TargetingOverlay · ★props/Signpost · ★props/Bench · …
+             House (★glow/flare) · HouseInterior, Ribbon (Stage 4) · ★Inscriptions · ★TargetingOverlay · ★props/Signpost · ★props/Bench · …
   obstacles/ Obstacle (★shared lifecycle/disposal) · GrassAttack (★ankle coils) · TreeAttack (★bending trunk)
              ★WindGust · ★WaterHazard · ★FireLine · ObstacleManager
   demon/     ★abilities/DemonAbilitySystem · ★abilities/Fairness · DemonDirector · AIDemonDirector (★rewritten)
              ★HumanDemonDirector · ★DemonMind · ★VisitorObserver · ★Tricks · ★Sarcasm · DemonVoice
   story/     Chapter · park/ParkChapter (★both modes) · ★park/CourseDirector · park/course (★thinned, shortcut gap)
+             prologue/Prologue (Stage 3) · house/HouseSequence (Stage 4)
   audio/     AudioEngine (★gust, gurgle/fountain, cold ignition/ash, dodge relief, bells, lamp hum, phase swells)
   ui/        UI (★mode menu, 1v1 how-to, dodge flash, winner card) · ★DemonPanel · styles
 ```
@@ -209,7 +239,7 @@ src/
 - **Animation is procedural and authored in code**, not mocap or keyframed clips. `AnimationMixer` drives GLB bodies; it isn't used for the generated cast.
 - **There is no recorded audio yet.** All sound is synthesized. A sample slot (`public/audio/README.md`) takes licensed recordings; laughter is left as a murmur swell until a real recording is supplied.
 - **The GLB test model is a robot**, used only to prove the pipeline. Its oversized head breaks the humanoid eye anchor, so the phone close-ups frame badly with it. A humanoid model fits the anchors.
-- **There is no cloth or hair simulation.** Coat panels, hair and scarves are spring-driven bone chains.
+- **Cloth simulation is limited to the veil** (a small verlet grid). Coat panels, hair and scarves are spring-driven bone chains, and the gown is skinned.
 - **All textures and sounds are generated at runtime.** There are no asset files, and no voice acting: the Demon "speaks" in engraved text.
 - **Puddles use `MeshPhongMaterial`, deliberately.** It samples the equirect night panorama directly. `MeshStandardMaterial` would trigger Three.js's PMREM prefilter, whose shader produced an (harmless) HLSL precision warning on Windows/ANGLE and a compile stall mid-chase. All hazard shaders are also precompiled at load (`DemonAbilitySystem.prewarm`).
 - **Performance:** about 150–160 fps at 1600×900 on an RTX 4060 laptop GPU. On an integrated Intel GPU, expect much less; dynamic resolution compensates. On dual-GPU laptops, set the browser to *High performance* in Windows Graphics settings.
@@ -219,7 +249,7 @@ src/
 1. ~~Stage 1: park chase~~
 2. ~~Stage 2: the intelligent Demon, four powers, tricks, local 1v1~~
 3. ~~Prologue: the dating app, the match, the friends~~
-4. House interior: forced inside, the wedding dress
+4. ~~House interior: forced inside, the wedding dress~~
 5. Mirror: terrifying reflections
 6. Window: friends outside, the escape
 7. Reveal: the friends become demons; the house was protecting her

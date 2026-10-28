@@ -1,4 +1,4 @@
-import type { CatchCause, EventBus, HazardKind } from '../core/Events';
+import type { CatchCause, EventBus, HazardKind, HouseSound } from '../core/Events';
 import { SampleBank } from './SampleBank';
 
 /**
@@ -70,6 +70,7 @@ export class AudioEngine {
     bus.on('trick:bench', () => this.bell(130.8, 0.1));
     bus.on('trick:lights', () => this.hum());
     bus.on('prologue:sound', ({ id }) => this.prologueSound(id));
+    bus.on('house:sound', ({ id }) => this.houseSound(id));
     bus.on('trick:shortcut', ({ active }) => {
       if (!active) {
         this.thud(40, 0.45);
@@ -318,7 +319,7 @@ export class AudioEngine {
   /** Continuous parameters, once per frame. */
   update(
     dt: number,
-    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number; city?: number; prologue?: boolean },
+    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number; city?: number; prologue?: boolean; indoor?: boolean },
   ): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -331,11 +332,13 @@ export class AudioEngine {
     this.cityGain.gain.setTargetAtTime(city * 0.55, t, 0.8);
     this.murmurGain.gain.setTargetAtTime(Math.pow(city, 2) * 0.07, t, 0.8);
     this.duskPadGain.gain.setTargetAtTime(p.prologue ? Math.pow(city, 1.5) * 0.9 : 0, t, 1.5);
-    this.windGain.gain.setTargetAtTime(((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006) * (1 - city * 0.55), t, 0.3);
+    // Indoors (Stage 4) the wind is only a draught under the door.
+    const outside = p.indoor ? 0.12 : 1;
+    this.windGain.gain.setTargetAtTime(((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006) * (1 - city * 0.55) * outside, t, p.indoor ? 0.08 : 0.3);
     this.slideGain.gain.setTargetAtTime(p.sliding ? 0.05 + p.speed * 0.006 : 0, t, 0.15);
     this.slideFilter.frequency.setTargetAtTime(500 + p.speed * 45, t, 0.2);
     this.padGain.gain.setTargetAtTime(peace ? 1 : 0, t, peace ? 1.5 : 0.4);
-    this.droneGain.gain.setTargetAtTime((peace ? 0.25 : 1 + anx * 0.8) * (1 - city * 0.95), t, 0.8);
+    this.droneGain.gain.setTargetAtTime((peace ? 0.25 : 1 + anx * 0.8) * (1 - city * 0.95) * (p.indoor ? 0.55 : 1), t, 0.8);
     if (city > 0.35) {
       this.carTimer -= dt;
       if (this.carTimer <= 0) {
@@ -521,6 +524,87 @@ export class AudioEngine {
           o.stop(t + len + 0.05);
         }
       }
+    }
+  }
+
+  /** Stage 4: the house's own sounds. */
+  private houseSound(id: HouseSound): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    switch (id) {
+      case 'creak':
+        // The front door swinging wide, slowly.
+        this.creak(0.62, 0.3);
+        this.creakAt(0.9, 0.55, 0.18);
+        break;
+      case 'slam':
+        this.thud(48, 0.7);
+        this.thud(90, 0.35);
+        this.bell(41.2, 0.12);
+        setTimeout(() => this.rustle(0.4), 60);
+        break;
+      case 'rattle':
+        for (let i = 0; i < 6; i++) {
+          setTimeout(() => this.thud(140 + Math.random() * 40, 0.12), i * 85 + (i > 2 ? 260 : 0));
+        }
+        break;
+      case 'candle': {
+        // A wick catching: a soft breathy flare.
+        const n = this.noise();
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.frequency.setValueAtTime(900, t);
+        f.frequency.exponentialRampToValueAtTime(2600, t + 0.25);
+        f.Q.value = 1.2;
+        const g = ctx.createGain();
+        n.connect(f).connect(g);
+        g.connect(this.sfx);
+        g.connect(this.reverbSend);
+        this.env(g, 0.09, 0.03, 0.4);
+        n.start(t, Math.random(), 0.5);
+        break;
+      }
+      case 'organ': {
+        // A single held minor chord from somewhere upstairs, slightly out of tune.
+        for (const [m, det] of [
+          [45, -4],
+          [52, 3],
+          [57, 0],
+          [60, 6],
+          [64, -3],
+        ] as const) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = 440 * Math.pow(2, (m - 69) / 12);
+          o.detune.value = det;
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = 900;
+          const g = ctx.createGain();
+          o.connect(lp).connect(g);
+          g.connect(this.amb);
+          g.connect(this.reverbSend);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(0.022, t + 2.5);
+          g.gain.setValueAtTime(0.022, t + 9);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 16);
+          o.start(t);
+          o.stop(t + 16.2);
+        }
+        break;
+      }
+      case 'silk':
+      case 'sheet':
+        this.rustle(id === 'sheet' ? 1.4 : 0.9);
+        break;
+      case 'snap':
+        this.swish();
+        this.thud(70, 0.2);
+        break;
+      case 'bell':
+        this.bell(98, 0.16);
+        break;
     }
   }
 

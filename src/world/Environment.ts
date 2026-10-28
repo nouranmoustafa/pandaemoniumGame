@@ -243,6 +243,22 @@ export class Environment {
     this.house.flare = 1;
   }
 
+  /**
+   * Stage 4: inside the house the park is gone — no sky, no moon, no
+   * grass — and the night closes in to a dark, close haze. Outdoors again,
+   * update() restores the fog and background on its next frame.
+   */
+  setIndoors(on: boolean): void {
+    this.group.visible = !on;
+    this.sky.group.visible = !on;
+    if (on) {
+      const fog = this.scene.fog as THREE.FogExp2;
+      fog.color.setHex(0x0a0608);
+      fog.density = 0.03;
+      (this.scene.background as THREE.Color).setHex(0x050304);
+    }
+  }
+
   reset(): void {
     this.entrance.reset();
     this.gust = this.gustTarget = 0;

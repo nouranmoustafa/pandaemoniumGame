@@ -56,8 +56,10 @@ export class GeneratedCharacter implements VisitorAvatar {
   readonly phone: THREE.Group;
   phoneScreen!: THREE.Mesh;
   readonly faceState: FaceState = { ...NEUTRAL };
-  private clothing: THREE.SkinnedMesh[] = [];
-  private materials = new Map<string, THREE.Material>();
+  /** Garment meshes of the current outfit (the body's skin, hands and neck included). */
+  clothing: THREE.SkinnedMesh[] = [];
+  /** Material per slot of the current outfit. */
+  readonly materials = new Map<string, THREE.Material>();
   private skinMat: THREE.MeshPhysicalMaterial;
   private hairMat: THREE.MeshPhysicalMaterial;
   private headMat: THREE.MeshPhysicalMaterial;
@@ -167,7 +169,8 @@ export class GeneratedCharacter implements VisitorAvatar {
     return g;
   }
 
-  private addSkinned(geo: THREE.BufferGeometry, mat: THREE.Material, slot: string): THREE.SkinnedMesh {
+  /** Bind extra skinned geometry (built in bind pose) to this character's skeleton. */
+  addSkinned(geo: THREE.BufferGeometry, mat: THREE.Material, slot: string): THREE.SkinnedMesh {
     const mesh = new THREE.SkinnedMesh(geo, mat);
     mesh.name = slot;
     this.model.add(mesh);
@@ -243,6 +246,11 @@ export class GeneratedCharacter implements VisitorAvatar {
     this.rig.applyHand('L', this.hands.L);
     this.rig.applyHand('R', this.hands.R);
     this.lastPose = pose;
+  }
+
+  /** Current eye direction (yaw, pitch) relative to the head. */
+  get gazeAngles(): Readonly<{ yaw: number; pitch: number }> {
+    return this.gaze;
   }
 
   setGaze(yaw: number, pitch: number): void {

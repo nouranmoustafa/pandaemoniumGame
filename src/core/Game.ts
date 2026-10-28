@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { ParkChapter } from '../story/park/ParkChapter';
+import type { HouseBeat } from '../story/house/HouseSequence';
 import type { PrologueBeat } from '../story/prologue/Prologue';
 import { UI } from '../ui/UI';
 import { EventBus } from './Events';
@@ -30,9 +31,10 @@ interface Fade {
 /**
  * Owns the renderer, the main loop and top-level flow:
  *
- *   title → prologue → playing ⇄ paused → ended → (retry chase | replay story | title)
+ *   title → prologue → playing → house → ended → (retry chase | replay story | title)
+ *   (prologue, playing and house can each pause)
  *
- * alongside a story-state machine (TITLE_SCREEN … STAGE_2_END) that systems
+ * alongside a story-state machine (TITLE_SCREEN … STAGE_4_END) that systems
  * hook for enter/exit work. Transitions that fade run on the frame clock —
  * no timers — so they can't overlap or double-fire.
  */
@@ -49,9 +51,9 @@ export class Game {
   readonly chapter: ParkChapter;
   private post: PostFX;
   private timer = new THREE.Timer();
-  private endInfo: { caught: number; time: number; winner?: 'demon' | 'visitor' } = { caught: 0, time: 0 };
+  private endInfo: { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number } = { caught: 0, time: 0 };
   private fade: Fade | null = null;
-  private resumeTo: 'prologue' | 'playing' = 'playing';
+  private resumeTo: 'prologue' | 'playing' | 'house' = 'playing';
   private skipHold = 0;
   private skipPrompt = 0;
   private opts: GameOptions;
@@ -93,8 +95,13 @@ export class Game {
       { startX: opts.startX },
     );
     this.post = new PostFX(this.renderer, this.scene, this.camera.camera);
-    // Warm the Demon's shaders now rather than mid-chase.
+    // Warm the Demon's shaders now rather than mid-chase, and the house's so
+    // Stage 4 doesn't stall at the door. Compiled against the composer's
+    // target: the scene is drawn there (linear, untonemapped), not to the screen.
+    this.renderer.setRenderTarget(this.post.composer.renderTarget1);
     this.chapter.abilities.prewarm(this.renderer, this.scene, this.camera.camera);
+    this.chapter.house.prewarm(this.renderer, this.scene, this.camera.camera);
+    this.renderer.setRenderTarget(null);
 
     this.bus.on('visitor:caught', () => {
       this.post.pulseHurt();
@@ -105,6 +112,10 @@ export class Game {
       this.states.go('ended');
     });
     this.chapter.prologue.onBeat = (b: PrologueBeat) => this.story.go(b);
+    this.chapter.house.onBeat = (b: HouseBeat) => this.story.go(b);
+    this.chapter.onHouseBegin = () => {
+      if (this.states.is('playing')) this.states.go('house');
+    };
     this.chapter.onPrologueHandoff = () => {
       if (!this.states.is('prologue')) return;
       this.chapter.start(false);
@@ -117,7 +128,7 @@ export class Game {
 
     window.addEventListener('resize', this.onResize);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && (this.states.is('playing') || this.states.is('prologue'))) this.pause();
+      if (document.hidden && (this.states.is('playing') || this.states.is('prologue') || this.states.is('house'))) this.pause();
     });
 
     this.states.go('title');
@@ -155,21 +166,35 @@ export class Game {
           if (from !== 'paused') this.story.go('CHASE_GAMEPLAY');
         },
       })
+      .register('house', {
+        enter: (from) => {
+          this.ui.showPause(false);
+          this.ui.showHint(false);
+          this.ui.setLetterbox(true);
+          if (from !== 'paused') this.skipPrompt = 4;
+        },
+        exit: () => {
+          this.skipHold = 0;
+          this.skipPrompt = 0;
+          this.ui.showSkip(false, 0);
+        },
+      })
       .register('paused', { enter: () => this.ui.showPause(true), exit: () => this.ui.showPause(false) })
       .register('ended', {
         enter: () => {
-          this.story.go('STAGE_2_END');
+          this.story.go('STAGE_4_END');
+          this.ui.setLetterbox(false);
           const lines = [
-            'You found it after all. It was so hoping you would.',
-            'It kept the light on for you.',
-            'Inside, something is laying out a dress in your size.',
+            'It always did have your measurements.',
+            'Something old. Something borrowed. Someone new.',
+            'The chairs thought it was a lovely service.',
           ];
           const versusLines = {
-            demon: 'She is inside now. The Demon thanks you for your assistance.',
-            visitor: 'She arrived on her own terms. The house is pretending that was the plan.',
+            demon: 'She is inside, and dressed. The Demon thanks you for your assistance.',
+            visitor: 'She arrived on her own terms. The gown is pretending that was the plan.',
           };
           const line = this.endInfo.winner ? versusLines[this.endInfo.winner] : lines[Math.floor(Math.random() * lines.length)];
-          this.ui.showEnd(this.endInfo.caught, this.endInfo.time, line, this.endInfo.winner);
+          this.ui.showEnd(this.endInfo.caught, this.endInfo.time, line, this.endInfo.winner, this.endInfo.resisted ?? 0);
         },
         exit: () => this.ui.hideEnd(),
       });
@@ -194,12 +219,12 @@ export class Game {
     this.input.onPress((a) => {
       const s = this.states.state;
       if (a === 'escape') {
-        // In the prologue Escape is held to skip (see loop); it never pauses there.
-        if (s === 'prologue') this.skipPrompt = Math.max(this.skipPrompt, 3);
+        // In the prologue and the house Escape is held to skip (see loop); it never pauses there.
+        if (s === 'prologue' || s === 'house') this.skipPrompt = Math.max(this.skipPrompt, 3);
         else if (s === 'playing') this.pause();
         else if (s === 'paused') this.resume();
       } else if (a === 'pause') {
-        if (s === 'playing' || s === 'prologue') this.pause();
+        if (s === 'playing' || s === 'prologue' || s === 'house') this.pause();
         else if (s === 'paused') this.resume();
       } else if (a === 'restart' && (s === 'ended' || s === 'paused')) {
         this.restart('chase');
@@ -237,7 +262,7 @@ export class Game {
 
   pause(): void {
     const s = this.states.state;
-    if (s !== 'playing' && s !== 'prologue') return;
+    if (s !== 'playing' && s !== 'prologue' && s !== 'house') return;
     this.resumeTo = s;
     this.states.go('paused');
   }
@@ -253,6 +278,12 @@ export class Game {
       this.chapter.skipPrologue();
       this.states.go('playing');
     });
+  }
+
+  /** Hold-Escape skip in the house: behind a fade, straight to the gowned tableau and the end card. */
+  skipHouse(): void {
+    if (!this.states.is('house') || this.fade) return;
+    this.runFade(0.4, 1.2, () => this.chapter.skipHouse());
   }
 
   /**
@@ -326,7 +357,8 @@ export class Game {
   /** Chase-side story states follow the run itself; they only ever move forward. */
   private trackChaseStory(): void {
     const c = this.chapter.visitor.controller;
-    if (this.story.is('STAGE_2_END')) return;
+    // Once the house has her, its own beats own the story.
+    if (this.story.is('STAGE_4_END') || this.chapter.house.phase !== 'off') return;
     if (c.mode === 'slide' || c.mode === 'arrive') this.story.go('PAVEMENT_SLIDE');
     else if (this.story.is('CHASE_GAMEPLAY') && this.chapter.mind.phase !== 'amused') this.story.go('CHASE_ESCALATION');
   }
@@ -336,12 +368,15 @@ export class Game {
     const rawDt = this.timer.getDelta();
     const dt = Math.min(rawDt, 1 / 20);
     const s = this.states.state;
-    if (s === 'prologue') {
+    if (s === 'prologue' || s === 'house') {
       if (this.input.isHeld('escape') && !this.fade) this.skipHold += dt;
       else this.skipHold = Math.max(0, this.skipHold - dt * 3);
       this.skipPrompt = Math.max(0, this.skipPrompt - dt);
-      this.ui.showSkip(this.skipPrompt > 0 || this.skipHold > 0, this.skipHold / SKIP_HOLD);
-      if (this.skipHold >= SKIP_HOLD) this.skipPrologue();
+      this.ui.showSkip(this.skipPrompt > 0 || this.skipHold > 0, this.skipHold / SKIP_HOLD, s === 'house' ? 'HOLD ESC — SKIP' : undefined);
+      if (this.skipHold >= SKIP_HOLD) {
+        if (s === 'house') this.skipHouse();
+        else this.skipPrologue();
+      }
     }
     if (s !== 'paused') this.chapter.update(dt);
     if (s === 'playing') this.trackChaseStory();

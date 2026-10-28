@@ -7,6 +7,8 @@ export type CatchCause = 'grass' | 'branch' | 'water' | 'fire';
 export type PowerKind = 'grass' | 'wind' | 'water' | 'fire';
 export type DemonPhase = 'amused' | 'irritated' | 'desperate';
 export type Caster = 'ai' | 'human' | 'course';
+/** Stage 4's sound cues (the house sequence stays decoupled from the audio engine). */
+export type HouseSound = 'creak' | 'slam' | 'rattle' | 'candle' | 'organ' | 'silk' | 'bell' | 'sheet' | 'snap';
 
 export interface GameEvents {
   'visitor:caught': { by: CatchCause; x: number };
@@ -33,10 +35,11 @@ export interface GameEvents {
   'trick:bench': { encounter: number };
   'trick:lights': Record<string, never>;
   'trick:shortcut': { active: boolean };
-  'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor' };
+  'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number };
   /** Prologue story beats and its sound cues (audio stays decoupled from the script). */
   'prologue:beat': { beat: string };
   'prologue:sound': { id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' | 'laugh' };
+  'house:sound': { id: HouseSound };
 }
 
 type Handler<T> = (payload: T) => void;

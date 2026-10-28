@@ -27,6 +27,8 @@ export class UI {
   private title = el('div', 'title-screen');
   private howto = el('div', 'howto');
   private hint = el('div', 'hint', 'UP / DOWN — <span>DODGE</span><br>TAP SPACE — <span>RUN</span>');
+  /** Stage 4's in-scene prompt (pull back), styled like the hint. */
+  private prompt = el('div', 'hint prompt');
   private subtitle = el('div', 'subtitle');
   private effort = el('div', 'effort', '<i></i>');
   private hurt = el('div', 'hurt');
@@ -64,8 +66,9 @@ export class UI {
       <p class="ht-head">Local 1v1</p>
       <p>Player one is the Visitor, on the keyboard. Player two is the <em>Demon</em>, with the <kbd>MOUSE</kbd>: choose Grass, Wind, Water or Fire, then click the lit path ahead of her. Right-click cancels.</p>
       <p>The Demon wins if she is caught ${MODE_TUNING.versusCatchesToWin} times before the house. It may not close every lane, strike without warning, or kick her while she's down.</p>
-      <p><kbd>ESC</kbd> or <kbd>P</kbd> pause. During the opening, <em>hold</em> <kbd>ESC</kbd> to skip it.</p>`;
-    this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE III — THE PROLOGUE'));
+      <p>At the house, <kbd>SPACE</kbd> pulls back against whatever has hold of her. It won't help. It will be noted.</p>
+      <p><kbd>ESC</kbd> or <kbd>P</kbd> pause. During the opening and the house, <em>hold</em> <kbd>ESC</kbd> to skip.</p>`;
+    this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE IV — THE HOUSE'));
 
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
     const pm = el('div', 'menu');
@@ -88,7 +91,7 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
+    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -111,8 +114,9 @@ export class UI {
   }
 
   /** "HOLD ESC — SKIP INTRO", with a meter that fills while it's held. */
-  showSkip(v: boolean, progress: number): void {
+  showSkip(v: boolean, progress: number, label = 'HOLD ESC — SKIP INTRO'): void {
     this.skip.classList.toggle('show', v);
+    if (this.skip.firstChild) this.skip.firstChild.textContent = label;
     (this.skip.lastElementChild as HTMLElement).style.transform = `scaleX(${Math.min(1, progress).toFixed(3)})`;
   }
 
@@ -124,6 +128,12 @@ export class UI {
 
   showHint(v: boolean): void {
     this.hint.classList.toggle('show', v);
+  }
+
+  /** A short in-scene prompt (null hides it). */
+  setPrompt(html: string | null): void {
+    if (html) this.prompt.innerHTML = html;
+    this.prompt.classList.toggle('show', !!html);
   }
 
   showPause(v: boolean): void {
@@ -169,12 +179,12 @@ export class UI {
     (this.effort.firstElementChild as HTMLElement).style.transform = `scaleX(${v.toFixed(3)})`;
   }
 
-  showEnd(caught: number, time: number, line: string, winner?: 'demon' | 'visitor'): void {
-    const title = winner === 'demon' ? 'The Demon Wins' : winner === 'visitor' ? 'The Visitor Wins' : 'The Door Is Open';
+  showEnd(caught: number, time: number, line: string, winner?: 'demon' | 'visitor', resisted = 0): void {
+    const title = winner === 'demon' ? 'The Demon Wins' : winner === 'visitor' ? 'The Visitor Wins' : 'The Dress Fits';
     this.end.innerHTML = `
       <h2>${title}</h2>
       <p class="line">${line}</p>
-      <p class="stats">CAUGHT ${caught}&nbsp;&nbsp;·&nbsp;&nbsp;${time.toFixed(1)}s</p>`;
+      <p class="stats">CAUGHT ${caught}&nbsp;&nbsp;·&nbsp;&nbsp;${time.toFixed(1)}s&nbsp;&nbsp;·&nbsp;&nbsp;PULLED BACK ${resisted}</p>`;
     const m = el('div', 'menu');
     const retry = el('button', '', 'RETRY CHASE');
     const replay = el('button', '', 'REPLAY STORY');
@@ -183,7 +193,7 @@ export class UI {
     replay.addEventListener('click', this.endHandlers.onReplayStory);
     quit.addEventListener('click', this.endHandlers.onQuit);
     m.append(retry, replay, quit);
-    const hint = el('p', 'stats', 'THE PARK — TO BE CONTINUED &nbsp;·&nbsp; R RETRIES THE CHASE');
+    const hint = el('p', 'stats', 'THE MIRROR — TO BE CONTINUED &nbsp;·&nbsp; R RETRIES THE CHASE');
     hint.style.marginTop = '2.4em';
     hint.style.fontSize = '0.75rem';
     this.end.append(m, hint);
