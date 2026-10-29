@@ -20,6 +20,7 @@ import { WindGust } from '../../obstacles/WindGust';
 import { DemonPanel } from '../../ui/DemonPanel';
 import { Visitor } from '../../visitor/Visitor';
 import { Environment } from '../../world/Environment';
+import { Graves } from '../../world/props/Graves';
 import { Inscriptions } from '../../world/Inscriptions';
 import { ENTRANCE } from '../../world/ParkEntrance';
 import { TargetingOverlay } from '../../world/TargetingOverlay';
@@ -131,6 +132,11 @@ export class ParkChapter implements Chapter {
     this.env = new Environment(s.scene, s.bus, treeXs);
     this.visitor = new Visitor(s.bus);
     s.scene.add(this.visitor.object);
+    // Four headstones: back in the dark behind the park railings, where her friends stand talking —
+    // and again on a rise in the long grass beside the house (on its hill, so they rise and sink with it).
+    s.scene.add(new Graves(-14.5, -5.8, -1.04, 3, undefined, 1.4).group);
+    const hill = (x: number, z: number) => -0.8 + 1.1 * Math.sqrt(Math.max(0, 1 - ((x - 10) / 42) ** 2 - (z / 40) ** 2));
+    this.env.house.group.add(new Graves(-10, -20, -1.37, 7, (x, z) => hill(x, z) + 0.55, 2.1).group);
     this.obstacles = new ObstacleManager(PARK_COURSE, this.env.pavement, this.env.barkMaterial);
     s.scene.add(this.obstacles.group);
 

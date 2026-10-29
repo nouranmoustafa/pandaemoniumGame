@@ -22,8 +22,8 @@ export const BEATS: Array<{ id: PrologueBeat; at: number }> = [
   { id: 'PROLOGUE_GOODBYE', at: 25 },
   { id: 'PROLOGUE_PARK_ENTRY', at: 31 },
 ];
-/** When the player takes control. */
-export const HANDOFF_AT = 42.4;
+/** When the prologue hands over: as soon as she has waved goodbye and set off (the walk in is cut). */
+export const HANDOFF_AT = 30.0;
 /** When the app starts on her phone. */
 const APP_AT = 17.0;
 

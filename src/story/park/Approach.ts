@@ -10,8 +10,8 @@ import type { Environment } from '../../world/Environment';
 
 /** Where she stops to read the invitation: the house stands at the end of the road, far off. */
 const STOP_X = CHASE.start;
-/** Where the cut finds her, walking on toward it. */
-const WALK_FROM = STOP_X - 20;
+/** Where the cut finds her: a few steps from where she stops. */
+const WALK_FROM = STOP_X - 7;
 /** Black between the park gate and deep in the park. */
 const CUT = 0.45;
 
