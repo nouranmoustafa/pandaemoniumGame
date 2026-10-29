@@ -1,12 +1,19 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { COLORS } from '../config';
 import { mulberry32 } from '../core/math';
 import { glowTexture } from './Textures';
+import { Vine, vineMaterial } from './Vine';
 
 /** Height of the porch and the ground floor above the path. */
 export const HOUSE_FLOOR = 0.3;
 /** House-local X of the front wall (the door stands in it). */
 export const HOUSE_FRONT = -9.05;
+/**
+ * Stage 5: the window she escapes through, in the side wall that faces the
+ * lawn (house-local; the wall is at z = -6.5). Its sill is the hall's sill.
+ */
+export const ESCAPE_WINDOW = { x: -3, sillY: HOUSE_FLOOR + 0.82, z: 6.62, width: 2.0, height: 2.7 };
 
 export function sidingTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -30,6 +37,10 @@ export function sidingTexture(): THREE.CanvasTexture {
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
+}
+
+function mergeFrame(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  return mergeGeometries(parts)!;
 }
 
 interface WindowLight {
@@ -56,6 +67,15 @@ export class House {
   /** 0..1 — how far the front door has opened (ending sequence). */
   doorOpen = 0;
   private doorPivot = new THREE.Group();
+  /** Stage 5: 0 = shut, 1 = open — the window she climbs out of. */
+  escapeOpen = 0;
+  /** Stage 5: the vine that follows her out of the window, and the ones that keep the door. */
+  readonly escapeVine: Vine;
+  readonly doorVines: Vine[] = [];
+  /** The one that reaches out from under the door at the very end. */
+  readonly doorReach: Vine;
+  private escapeLeaves: THREE.Group[] = [];
+  private escapeOpenNow = 0;
 
   constructor() {
     const rand = mulberry32(13);
@@ -188,6 +208,49 @@ export class House {
     this.group.add(eye);
     this.windows.push({ mesh: eye, base: 1.2, phase: 0 });
 
+    // The escape window, in the side wall over the lawn: warm, with two casement leaves.
+    {
+      const E = ESCAPE_WINDOW;
+      const g = new THREE.Group();
+      g.position.set(E.x, E.sillY, E.z);
+      this.group.add(g);
+      const parts: THREE.BufferGeometry[] = [];
+      parts.push(new THREE.BoxGeometry(0.16, E.height + 0.3, 0.32).translate(-E.width / 2 - 0.08, E.height / 2, 0));
+      parts.push(new THREE.BoxGeometry(0.16, E.height + 0.3, 0.32).translate(E.width / 2 + 0.08, E.height / 2, 0));
+      parts.push(new THREE.BoxGeometry(E.width + 0.5, 0.2, 0.36).translate(0, E.height + 0.1, 0));
+      parts.push(new THREE.BoxGeometry(E.width + 0.6, 0.12, 0.5).translate(0, -0.06, 0.06));
+      const frame = new THREE.Mesh(mergeFrame(parts), trim);
+      frame.castShadow = true;
+      g.add(frame);
+      const inside = new THREE.Mesh(new THREE.PlaneGeometry(E.width, E.height), glass.clone());
+      inside.position.set(0, E.height / 2, -0.1);
+
+      g.add(inside);
+      this.windows.push({ mesh: inside, base: 0.42, phase: 4 });
+      for (const side of [-1, 1]) {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * E.width / 2, 0, 0.04);
+        g.add(pivot);
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(E.width / 2, E.height, 0.06), new THREE.MeshStandardMaterial({ color: 0x2a1a20, roughness: 0.4, transparent: true, opacity: 0.35, fog: false }));
+        leaf.position.set((-side * E.width) / 4, E.height / 2, 0);
+        pivot.add(leaf);
+        const bars = new THREE.Mesh(new THREE.BoxGeometry(E.width / 2, 0.06, 0.08), trim);
+        bars.position.set((-side * E.width) / 4, E.height * 0.68, 0);
+        pivot.add(bars);
+        this.escapeLeaves.push(pivot);
+      }
+    }
+    const vm = vineMaterial();
+    this.escapeVine = new Vine(vm, 0.05, 48, 7, 8);
+    this.group.add(this.escapeVine.mesh);
+    for (let k = 0; k < 5; k++) {
+      const v = new Vine(vm, 0.06 + (k % 2) * 0.02, 32, 7, 6);
+      this.group.add(v.mesh);
+      this.doorVines.push(v);
+    }
+    this.doorReach = new Vine(vm, 0.12, 56, 7, 4);
+    this.group.add(this.doorReach.mesh);
+
     // Porch, steps and the door.
     const porch = new THREE.Mesh(new THREE.BoxGeometry(4, baseY, 8), trim);
     porch.position.set(front - 2, baseY / 2, 0);
@@ -260,6 +323,10 @@ export class House {
     this.aura.scale.set(90 * (0.8 + auraK * 0.2), 70 * (0.8 + auraK * 0.2), 1);
     (this.aura.material as THREE.SpriteMaterial).opacity = Math.min(1, 0.7 + this.flare * 0.6 + (this.glow - 1) * 0.5);
     this.doorPivot.rotation.y = -this.doorOpen * 1.6;
+    this.escapeOpenNow += (this.escapeOpen - this.escapeOpenNow) * Math.min(1, dt * 2.4);
+    // Casements: they open outward, toward the lawn (+Z).
+    this.escapeLeaves[0].rotation.y = -this.escapeOpenNow * 1.25;
+    this.escapeLeaves[1].rotation.y = this.escapeOpenNow * 1.4;
     (this.doorGlow.material as THREE.SpriteMaterial).opacity = this.doorOpen;
   }
 }

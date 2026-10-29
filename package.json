@@ -2,7 +2,7 @@
   "name": "the-house-wants-you",
   "private": true,
   "version": "0.1.0",
-  "description": "THE HOUSE WANTS YOU — cinematic gothic horror chase (Stage 4: the house)",
+  "description": "THE HOUSE WANTS YOU — cinematic gothic horror chase (Stage 5: the window)",
   "type": "module",
   "scripts": {
     "dev": "vite",

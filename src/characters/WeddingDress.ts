@@ -20,6 +20,14 @@ type RevealUniforms = Record<string, THREE.IUniform>;
 const REVEAL_PARS = /* glsl */ `
 varying vec3 vBind;
 uniform float uReveal; uniform float uWaist; uniform float uRange; uniform vec3 uWristL; uniform vec3 uWristR; uniform float uNeckY; uniform float uH;
+uniform float uTear; uniform float uDirt;
+// Stage 5: where the window frame tore the skirt away — a ragged line, deepest at the back.
+float tearCut(vec3 p) {
+  float th = atan(p.x, p.z);
+  float back = smoothstep(-0.1, 0.85, -cos(th - 0.45));
+  float jag = abs(fract(th * 2.6 + 0.3) - 0.5) * 2.0 + 0.35 * sin(th * 17.0) + 0.2 * sin(th * 41.0);
+  return uTear * uH * (0.035 + 0.03 * jag + back * (0.2 + 0.07 * jag));
+}
 float revealField(vec3 p) {
   float d = length((p - vec3(0.0, uWaist, 0.0)) * vec3(0.85, 1.0, 0.85)) / uRange;
   d = min(d, 0.1 + length(p - uWristR) / uRange * 1.5);
@@ -58,11 +66,16 @@ function patch(mat: THREE.Material, uniforms: RevealUniforms, mode: 'in' | 'out'
         : `float rvF = revealField(vBind); float rvL = uReveal * ${FIELD_MAX.toFixed(2)};
            if (rvF > rvL) discard;
            ${mode === 'lace' ? 'if (laceMask(vBind) < 0.5) discard;' : ''}
+           float tcut = tearCut(vBind);
+           if (uTear > 0.0 && vBind.y < tcut) discard;
+           float tEdge = uTear > 0.0 ? smoothstep(0.035 * uH, 0.0, vBind.y - tcut) : 0.0;
+           float dirtN = fract(sin(dot(floor(vBind / uH * 34.0), vec3(3.1, 7.7, 1.3))) * 913.1);
+           float dirt = uDirt * (1.0 - smoothstep(0.0, 0.32 * uH, vBind.y)) * (0.45 + 0.55 * dirtN);
            float rvEdge = smoothstep(0.07, 0.0, rvL - rvF) * step(uReveal, 0.999);`;
     const light =
       mode === 'out'
         ? 'outgoingLight = mix(outgoingLight, vec3(0.62, 0.6, 0.58), rvEdge * 0.75);'
-        : 'outgoingLight += vec3(0.9, 0.86, 0.8) * rvEdge * 0.9;';
+        : 'outgoingLight += vec3(0.9, 0.86, 0.8) * rvEdge * 0.9; outgoingLight *= (1.0 - tEdge * 0.5) * (1.0 - dirt * 0.55) * mix(vec3(1.0), vec3(0.82, 0.9, 0.72), dirt);';
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + REVEAL_PARS)
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + test)
@@ -465,6 +478,8 @@ export class WeddingDress {
       uWristR: { value: rig.bindPos.get('wristR')!.clone() },
       uNeckY: { value: rig.bindPos.get('neck')!.y },
       uH: { value: H },
+      uTear: { value: 0 },
+      uDirt: { value: 0 },
     };
 
     const silk = fabric('silk');
@@ -569,8 +584,24 @@ export class WeddingDress {
     }
   }
 
+  /** Stage 5: 0..1, how much of the skirt the window frame tore away. */
+  set tear(v: number) {
+    this.uniforms.uTear.value = clamp(v, 0, 1);
+  }
+
+  get tear(): number {
+    return this.uniforms.uTear.value as number;
+  }
+
+  /** Stage 5: grass and earth on the hem after the fall. */
+  set dirt(v: number) {
+    this.uniforms.uDirt.value = clamp(v, 0, 1);
+  }
+
   /** Back to her own clothes. */
   reset(): void {
+    this.tear = 0;
+    this.dirt = 0;
     this.reveal = 0;
     this.veilDrop = 0;
     this.veilStarted = false;

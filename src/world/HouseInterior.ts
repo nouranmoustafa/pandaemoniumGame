@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp, damp, mulberry32, noise1, smoothstep } from '../core/math';
+import { HouseWindow, WINDOW } from './HouseWindow';
 import { glowTexture } from './Textures';
 
 /**
@@ -156,6 +157,8 @@ export class HouseInterior {
   private key: THREE.SpotLight;
   private hemi: THREE.HemisphereLight;
   private time = 0;
+  private fogTint = new THREE.Color();
+  private warmTint = new THREE.Color(0.2, 0.17, 0.15);
   /** 0 = open, 1 = shut. */
   doorShut = 0;
   /** 0 = hanging, 1 = slipped down (a sliver of the glass shows). */
@@ -164,6 +167,8 @@ export class HouseInterior {
   mirrorWake = 0;
   /** A surge of candlelight (the gown's reveal). */
   flare = 0;
+  /** Stage 5: the tall window between the arch and the mirror, and the night outside it. */
+  readonly window: HouseWindow;
 
   constructor() {
     const g = this.group;
@@ -198,8 +203,35 @@ export class HouseInterior {
       g.add(m);
       return m;
     };
-    // Long walls (the far one has two tall windows cut by their frames), end wall, door wall.
-    wall(L, L / 2, -W, 0);
+    // Long walls, end wall, door wall. The far wall has two painted windows and one real
+    // one (Stage 5), cut right through it.
+    {
+      const hole = new THREE.Path();
+      const x0 = WINDOW.x - WINDOW.width / 2 - 0.02 - L / 2;
+      const x1 = WINDOW.x + WINDOW.width / 2 + 0.02 - L / 2;
+      const y0 = WINDOW.sill - H / 2;
+      const y1 = WINDOW.sill + WINDOW.height - H / 2;
+      hole.moveTo(x0, y0);
+      hole.lineTo(x0, y1);
+      hole.lineTo(x1, y1);
+      hole.lineTo(x1, y0);
+      hole.lineTo(x0, y0);
+      const shape = new THREE.Shape();
+      shape.moveTo(-L / 2, -H / 2);
+      shape.lineTo(L / 2, -H / 2);
+      shape.lineTo(L / 2, H / 2);
+      shape.lineTo(-L / 2, H / 2);
+      shape.lineTo(-L / 2, -H / 2);
+      shape.holes.push(hole);
+      const geo = new THREE.ShapeGeometry(shape);
+      const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+      const p = geo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (p.getX(i) + L / 2) / L, (p.getY(i) + H / 2) / H);
+      const far = new THREE.Mesh(geo, wallMat);
+      far.position.set(L / 2, H / 2, -W);
+      far.receiveShadow = true;
+      g.add(far);
+    }
     wall(L, L / 2, W, Math.PI);
     wall(W * 2, L, 0, -Math.PI / 2);
     wall(W - 1.2, 0, -(W + 1.2) / 2, Math.PI / 2);
@@ -209,15 +241,25 @@ export class HouseInterior {
     lintel.rotation.y = Math.PI / 2;
     g.add(lintel);
     // Wainscot and skirting.
-    for (const z of [-W + 0.03, W - 0.03]) {
-      const pan = new THREE.Mesh(new THREE.BoxGeometry(L, 1.05, 0.06), wood);
-      pan.position.set(L / 2, 0.52, z);
+    // (On the far wall it stops either side of the real window.)
+    const wx0 = WINDOW.x - WINDOW.width / 2 - 0.25;
+    const wx1 = WINDOW.x + WINDOW.width / 2 + 0.25;
+    for (const [z, a, b] of [
+      [W - 0.03, 0, L],
+      [-W + 0.03, 0, wx0],
+      [-W + 0.03, wx1, L],
+    ]) {
+      const len = b - a;
+      const pan = new THREE.Mesh(new THREE.BoxGeometry(len, 1.05, 0.06), wood);
+      pan.position.set(a + len / 2, 0.52, z);
       pan.receiveShadow = true;
       g.add(pan);
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(L, 0.07, 0.12), wood);
-      rail.position.set(L / 2, 1.06, z);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.12), wood);
+      rail.position.set(a + len / 2, 1.06, z);
       g.add(rail);
     }
+    this.window = new HouseWindow(W, wood);
+    g.add(this.window.group);
 
     // The front door, seen from inside, on a pivot so it can slam.
     this.doorPivot.position.set(0.04, 0, -1.2);
@@ -451,6 +493,7 @@ export class HouseInterior {
     this.mirrorWake = 0;
     this.flare = 0;
     this.time = 0;
+    this.window.reset();
     this.applySheet();
   }
 
@@ -492,6 +535,10 @@ export class HouseInterior {
 
     this.doorPivot.rotation.y = -(1 - clamp(this.doorShut, 0, 1)) * 1.45;
     this.mirrorGlow.color.setRGB(0.36, 0.35, 0.38).multiplyScalar(this.mirrorWake * (0.8 + 0.2 * noise1(t * 2, 8)));
+    // The fog on the glass is lit by the room: the candles warm it a little.
+    this.fogTint.setRGB(0.15, 0.15, 0.17).lerp(this.warmTint, Math.min(1, chand * 0.5 + (sum / n) * 0.3));
+    this.window.fog.setTint(this.fogTint);
+    this.window.update(dt);
     this.applySheet();
   }
 

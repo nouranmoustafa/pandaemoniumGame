@@ -39,6 +39,9 @@ export class Visitor {
   heading = CHASE_HEADING;
   /** Set by the chapter: the Demon's anxiety, read as her rising dread. */
   dread = 0;
+  /** Stage 5's final run: what she feels and looks at, in place of the chase's own. */
+  moodOverride: ExpressionMix | null = null;
+  gazeOverride: THREE.Vector3 | null = null;
   private prevPos = new THREE.Vector3();
   private velocity = new THREE.Vector3();
   private prevVel = new THREE.Vector3();
@@ -163,6 +166,8 @@ export class Visitor {
     this.heading = CHASE_HEADING;
     this.cineSpeed = 0;
     this.relief = 0;
+    this.moodOverride = null;
+    this.gazeOverride = null;
     this.syncTransform();
     this.prevPos.copy(this.position);
     this.velocity.set(0, 0, 0);
@@ -208,14 +213,14 @@ export class Visitor {
     c.update(dt, input, ground);
     this.cineSpeed = 0;
     // Turn to face the run once the chase owns her.
-    this.heading = damp(this.heading, CHASE_HEADING, 6, dt);
+    this.heading = damp(this.heading, CHASE_HEADING * c.dir, 6, dt);
     this.syncTransform();
     this.trackMotion(dt);
 
     const pose = this.animator.update(dt, {
       speed: c.speed,
       effort: c.effort,
-      lateralVel: c.laneVel,
+      lateralVel: c.laneVel * c.dir,
       stumbleTime: c.stumbleTime,
       stumbleSide: c.stumbleSide,
       slide: c.slideBlend,
@@ -232,11 +237,11 @@ export class Visitor {
     const runK = smoothstep(2.5, 5, c.speed) * (1 - c.slideBlend);
     p.blendHand('L', 0.7, 0.05, 0.6, 0, runK).blendHand('R', 0.7, 0.05, 0.6, 0, runK);
     // Eyes on the path ahead (the animator's glances back carry the head; the eyes follow it).
-    this.lookAhead.set(this.position.x + 9, this.position.y + 1.6, this.position.z * 0.5);
-    this.performer.lookAt(c.mode === 'idle' ? null : this.lookAhead, 0.6);
+    this.lookAhead.set(this.position.x + 9 * c.dir, this.position.y + 1.6, this.position.z * 0.5);
+    this.performer.lookAt(this.gazeOverride ?? (c.mode === 'idle' ? null : this.lookAhead), this.gazeOverride ? 0.85 : 0.6);
     this.performer.layer(dt, p);
     this.character.applyPose(p);
-    this.performer.express(this.chaseExpression(dt), c.stumbling ? 18 : 5);
+    this.performer.express(this.moodOverride ?? this.chaseExpression(dt), c.stumbling ? 18 : this.moodOverride ? 2.5 : 5);
     this.performer.updateFace(dt);
     this.character.updateSecondary(dt, {
       velocity: this.velocity,

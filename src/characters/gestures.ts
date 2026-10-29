@@ -258,7 +258,234 @@ export const GESTURES = {
       p.add('head', -0.1 * w, 0, 0);
     },
   },
+
+  // ------------------------------------------------------------ Stage 5
+
+  /** Both palms flat against the window glass, leaning in toward it. */
+  palmsGlass: {
+    duration: 1.2,
+    ease: [0.6, 0.6],
+    apply(p, t, w) {
+      const breath = Math.sin(t * 1.7) * 0.03;
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -1.42 + breath, side * 0.1, -side * 0.12, w);
+        p.blendJoint(`elbow${s}`, -0.62, 0, 0, w);
+        p.blendJoint(`wrist${s}`, -0.2, side * -1.25, side * 0.55, w);
+        p.blendHand(s, 0.04, 0.5, 0.05, 0, w);
+      }
+      p.add('spine', 0.07 * w, 0, 0);
+      p.add('chest', 0.04 * w, 0, 0);
+      p.add('head', -0.04 * w, 0, 0);
+    },
+  },
+  /** One knock-knock with the knuckles of the right hand, then a small wave at the glass. */
+  knock: {
+    duration: 1.6,
+    ease: [0.25, 0.45],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const knock = t < 0.9 ? Math.max(0, Math.sin(t * 15)) * 0.14 : 0;
+      const swing = t > 0.9 ? Math.sin(t * 10) * 0.35 : 0;
+      p.blendJoint(`shoulder${s}`, -1.35 + knock, side * 0.1, -side * 0.05, w);
+      p.blendJoint(`elbow${s}`, -1.05 + knock, 0, 0, w);
+      p.blendJoint(`wrist${s}`, 0.1, side * -0.9, side * swing, w);
+      p.blendHand(s, t < 0.9 ? 0.85 : 0.1, 0.3, 0.5, 0, w);
+      p.add('spine', 0.05 * w, 0, 0);
+    },
+  },
+  /**
+   * Wiping the glass with her sleeve: the right forearm pressed flat to it,
+   * one round sweep and back. The script stamps the cleared fog where the
+   * hand actually is, so the clean patch follows the arm.
+   */
+  wipe: {
+    duration: 1.05,
+    ease: [0.14, 0.3],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const a = smoothstep(0.08, 0.95, t) * Math.PI * 2;
+      const sweep = Math.sin(a) * 0.55;
+      const lift = Math.cos(a) * 0.22;
+      p.blendJoint(`shoulder${s}`, -1.42 - lift, side * 0.25, -side * (0.25 - sweep), w);
+      p.blendJoint(`elbow${s}`, -0.95 - lift * 0.4, side * 0.4, 0, w);
+      p.blendJoint(`wrist${s}`, 0, side * -0.4, 0, w);
+      p.blendHand(s, 0.55, 0.05, 0.4, 0, w);
+      p.add('chest', 0.03 * w, side * sweep * 0.25 * w, 0);
+      p.add('spine', 0.06 * w, 0, 0);
+    },
+  },
+  /** Recoiling from the glass: hands drawn in to the chest, weight back. */
+  recoil: {
+    duration: 1.8,
+    ease: [0.12, 0.8],
+    apply(p, t, w) {
+      const k = 1 - smoothstep(0.7, 1.8, t) * 0.4;
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -0.75, -side * 0.25, -side * 0.25, w * k);
+        p.blendJoint(`elbow${s}`, -2.2, 0, 0, w * k);
+        p.blendJoint(`wrist${s}`, 0.3, 0, 0, w * k);
+        p.blendHand(s, 0.6, 0.1, 0.4, 0, w);
+      }
+      p.add('spine', -0.1 * w * k, 0, 0);
+      p.add('head', -0.06 * w * k, 0, 0);
+      p.root[2] -= 0.22 * smoothstep(0, 0.35, t) * w;
+    },
+  },
+  /** Reaching for the window latch with her right hand. */
+  latch: {
+    duration: 1.4,
+    ease: [0.3, 0.4],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const push = smoothstep(0.6, 1.1, t);
+      p.blendJoint(`shoulder${s}`, -1.25 - push * 0.15, side * 0.1, side * 0.1, w);
+      p.blendJoint(`elbow${s}`, -0.7 + push * 0.4, 0, 0, w);
+      p.blendJoint(`wrist${s}`, 0.2, side * -0.6, 0, w);
+      p.blendHand(s, 0.8 - push * 0.6, 0.2, 0.5, 0, w);
+      p.add('spine', 0.1 * w, 0, 0);
+    },
+  },
+  /**
+   * On the sill: crouched in the open window, one knee up, the left hand
+   * on the frame, the right reaching out into the night.
+   */
+  sill: {
+    duration: 1.0,
+    ease: [0.5, 0.5],
+    apply(p, t, w) {
+      const sway = Math.sin(t * 2.1) * 0.03;
+      p.blendJoint('thighL', -1.65, 0, 0.1, w);
+      p.blendJoint('kneeL', 2.15, 0, 0, w);
+      p.blendJoint('ankleL', -0.45, 0, 0, w);
+      p.blendJoint('thighR', -0.95, 0, -0.12, w);
+      p.blendJoint('kneeR', 2.3, 0, 0, w);
+      p.blendJoint('ankleR', 0.35, 0, 0, w);
+      p.blendJoint('hips', 0.25, 0, 0, w);
+      p.blendJoint('spine', 0.3 + sway, 0, 0, w);
+      p.blendJoint('chest', 0.15, 0, 0, w);
+      p.blendJoint('shoulderL', -2.1, 0, 0.55, w);
+      p.blendJoint('elbowL', -0.5, 0, 0, w);
+      p.blendHand('L', 0.8, 0.05, 0.6, 0, w);
+      p.blendJoint('shoulderR', -1.3 + sway, 0, -0.2, w);
+      p.blendJoint('elbowR', -0.3, 0, 0, w);
+      p.blendHand('R', 0.3, 0.3, 0.2, 0, w);
+      p.blendJoint('neck', -0.25, 0, 0, w);
+      p.root[1] -= 0.5 * w;
+      p.root[2] -= 0.05 * w;
+    },
+  },
+  /**
+   * Pulling free: leaning out of the window toward the grass with both
+   * arms reaching, the gown caught behind her. `STRUGGLE` carries the lean
+   * and each heave (a tap of SPACE) from the script.
+   */
+  pullFree: {
+    duration: 1.0,
+    ease: [0.4, 0.3],
+    apply(p, t, w) {
+      const L = STRUGGLE.lean;
+      const h = STRUGGLE.heave;
+      const strain = noise1(t * 5, 31) * 0.06;
+      p.blendJoint('thighL', -1.2 + L * 0.4, 0, 0.1, w);
+      p.blendJoint('kneeL', 1.7 - L * 0.5, 0, 0, w);
+      p.blendJoint('thighR', -0.5 + L * 0.3, 0, -0.1, w);
+      p.blendJoint('kneeR', 1.9 - L * 0.4, 0, 0, w);
+      p.blendJoint('hips', 0.35 + L * 0.35 + h * 0.2, 0, 0, w);
+      p.blendJoint('spine', 0.35 + L * 0.2 + h * 0.15 + strain, 0, 0, w);
+      p.blendJoint('chest', 0.1 + h * 0.1, 0, 0, w);
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -1.75 - h * 0.3 + strain * side, 0, side * 0.35, w);
+        p.blendJoint(`elbow${s}`, -0.25, 0, 0, w);
+        p.blendHand(s, 0.25 + h * 0.4, 0.35, 0.3, 0, w);
+      }
+      p.blendJoint('neck', -0.35 - h * 0.1, 0, 0, w);
+      p.blendJoint('head', -0.2, 0, 0, w);
+      p.root[1] -= (0.42 - L * 0.12) * w;
+      p.root[2] += (0.05 + L * 0.18 + h * 0.12) * w;
+    },
+  },
+  /** Fallen on the grass: on her knees and hands, head down. Released slowly, she rises. */
+  fallen: {
+    duration: 1.0,
+    ease: [0.12, 1.4],
+    apply(p, t, w) {
+      const breath = Math.sin(t * 3.2) * 0.04;
+      p.blendJoint('thighL', -1.4, 0, 0.12, w);
+      p.blendJoint('kneeL', 2.5, 0, 0, w);
+      p.blendJoint('ankleL', 0.7, 0, 0, w);
+      p.blendJoint('thighR', -1.1, 0, -0.18, w);
+      p.blendJoint('kneeR', 2.55, 0, 0, w);
+      p.blendJoint('ankleR', 0.7, 0, 0, w);
+      p.blendJoint('hips', 0.4, 0, 0, w);
+      p.blendJoint('spine', 0.55 + breath, 0, 0, w);
+      p.blendJoint('chest', 0.25 + breath, 0, 0, w);
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -0.95, 0, side * 0.12, w);
+        p.blendJoint(`elbow${s}`, -0.2, 0, 0, w);
+        p.blendJoint(`wrist${s}`, -0.9, 0, 0, w);
+        p.blendHand(s, 0.2, 0.5, 0.2, 0, w);
+      }
+      p.blendJoint('neck', 0.3, 0, 0, w);
+      p.blendJoint('head', 0.15, 0, 0, w);
+      p.root[1] -= 0.62 * w;
+      p.root[2] -= 0.1 * w;
+    },
+  },
+  /** A friend calling her over: the arm forward, the hand curling twice toward herself. */
+  beckon: {
+    duration: 2.4,
+    ease: [0.4, 0.5],
+    apply(p, t, w, side) {
+      const s = S(side);
+      const curl = Math.max(0, Math.sin(t * 5)) * smoothstep(0.4, 0.7, t);
+      p.blendJoint(`shoulder${s}`, -1.05, side * 0.1, side * 0.15, w);
+      p.blendJoint(`elbow${s}`, -0.6 - curl * 0.3, 0, 0, w);
+      p.blendJoint(`wrist${s}`, -0.3, side * -1.3, 0, w);
+      p.blendHand(s, curl, 0.2, 0.1, 0, w);
+    },
+  },
+  /** Backing away: hands up in front of her, the body turned half away. */
+  shield: {
+    duration: 1.2,
+    ease: [0.35, 0.6],
+    apply(p, t, w) {
+      const tremble = noise1(t * 14, 41) * 0.05;
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -1.0 + tremble, -side * 0.2, side * 0.05, w);
+        p.blendJoint(`elbow${s}`, -1.55, 0, 0, w);
+        p.blendJoint(`wrist${s}`, -0.5, side * -1.1, 0, w);
+        p.blendHand(s, 0.25, 0.5, 0.2, 0, w);
+      }
+      p.add('spine', -0.12 * w, 0, 0);
+      p.add('chest', -0.06 * w, 0.12 * w, 0);
+      p.add('head', 0.05 * w, 0, 0);
+    },
+  },
+  /** Both hands come up to her mouth. */
+  handsMouth: {
+    duration: 1.5,
+    ease: [0.25, 0.6],
+    apply(p, _t, w) {
+      for (const side of [1, -1] as const) {
+        const s = S(side);
+        p.blendJoint(`shoulder${s}`, -1.05, -side * 0.45, -side * 0.35, w);
+        p.blendJoint(`elbow${s}`, -2.45, 0, 0, w);
+        p.blendJoint(`wrist${s}`, 0.2, 0, 0, w);
+        p.blendHand(s, 0.35, 0.25, 0.3, 0, w);
+      }
+      p.add('neck', 0.08 * w, 0, 0);
+      p.add('spine', 0.04 * w, 0, 0);
+    },
+  },
 } satisfies Record<string, GestureDef>;
+
+/** Script-driven values for the window struggle (see `pullFree`). */
+export const STRUGGLE = { lean: 0, heave: 0 };
 
 export type GestureName = keyof typeof GESTURES;
 

@@ -24,6 +24,7 @@ import { Inscriptions } from '../../world/Inscriptions';
 import { ENTRANCE } from '../../world/ParkEntrance';
 import { TargetingOverlay } from '../../world/TargetingOverlay';
 import type { Chapter, ChapterServices } from '../Chapter';
+import { type FinaleJump, FinaleSequence } from '../finale/Finale';
 import { HouseSequence } from '../house/HouseSequence';
 import { HANDOFF_AT, Prologue } from '../prologue/Prologue';
 import { CourseDirector } from './CourseDirector';
@@ -62,6 +63,7 @@ export class ParkChapter implements Chapter {
   readonly panel: DemonPanel;
   readonly prologue: Prologue;
   readonly house: HouseSequence;
+  readonly finale: FinaleSequence;
   readonly cine = new CinematicDirector();
   mode: GameMode = 'single';
   complete = false;
@@ -89,6 +91,10 @@ export class ParkChapter implements Chapter {
   private timeScale = 1;
   private startX = 0;
   private unsub: Array<() => void> = [];
+  /** The chase's result, kept when the house takes her (the final run re-uses her controller). */
+  private chaseCaught = 0;
+  private chaseTime = 0;
+  private chaseWinner: 'demon' | 'visitor' = 'visitor';
 
   constructor(
     private s: ChapterServices,
@@ -137,16 +143,33 @@ export class ParkChapter implements Chapter {
       shake: (a) => s.camera.shake(a),
       prompt: (html) => s.ui.setPrompt(html),
     });
+    this.finale = new FinaleSequence(s.scene, this.env, this.visitor, this.house, this.prologue, {
+      bus: s.bus,
+      input: s.input,
+      camera: s.camera,
+      fade: (o, sec) => s.ui.setFade(o, sec),
+      shake: (a) => s.camera.shake(a),
+      prompt: (html) => s.ui.setPrompt(html),
+      choice: (options, i) => s.ui.showChoice(options, i, (k) => this.finale.choose(k)),
+      caption: (text) => s.ui.setCaption(text),
+      effort: (v, tapped, visible) => s.ui.setEffort(v, tapped, visible),
+    });
+    // Stage 4 hands straight on to Stage 5: the mirror, then laughter outside.
     this.house.onComplete = () => {
-      const c = this.visitor.controller;
+      this.panel.setActive(false);
+      this.finale.start();
+    };
+    this.finale.onComplete = () => {
       this.complete = true;
       s.bus.emit('chapter:complete', {
-        caught: c.caughtCount,
-        time: c.elapsed,
-        winner: this.mode === 'versus' ? this.versusWinner : undefined,
+        caught: this.chaseCaught,
+        time: this.chaseTime,
+        winner: this.mode === 'versus' ? this.chaseWinner : undefined,
         resisted: this.house.resists,
+        finale: true,
       });
     };
+
     this.loadVisitorBody();
 
     // Registered once, here — never on start/reset, so replays don't stack handlers.
@@ -243,6 +266,7 @@ export class ParkChapter implements Chapter {
     this.openingSaid = false;
     this.timeScale = 1;
     this.env.pavement.reset();
+    this.finale.reset();
     this.house.reset();
     this.env.reset();
     this.obstacles.reset();
@@ -309,9 +333,56 @@ export class ParkChapter implements Chapter {
     return Math.max(0, HANDOFF_AT - this.prologue.time);
   }
 
-  /** Hold-Escape skip during the house: straight to its end. */
+  /** Hold-Escape skip during the house: straight to its end (or, in Stage 5, to its next part). */
   skipHouse(): void {
-    this.house.finish();
+    if (this.finale.phase !== 'off') this.finale.skip();
+    else this.house.finish();
+  }
+
+  /** Debug / test: start Stage 5 at a checkpoint (?stage5=window|choice|run|reveal). */
+  jumpFinale(to: FinaleJump): void {
+    this.chaseActive = true;
+    this.panel.setActive(false);
+    this.chaseCaught = 0;
+    this.chaseTime = 0;
+    this.chaseWinner = 'visitor';
+    if (to === 'window' || to === 'choice') {
+      this.house.jumpToTableau();
+      const f = this.house.update(0);
+      this.s.camera.setCinematic(f.pos, f.look, f.fov);
+    }
+    this.finale.jump(to);
+    this.s.ui.setFade(0, 1.0);
+  }
+
+  /** Stage 5: the window, the escape, the run and the reveal. */
+  private updateFinale(dt: number): void {
+    const F = this.finale;
+    const frame = F.update(dt);
+    if (frame) this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
+    this.s.camera.update(dt, this.cameraSubject());
+    const out = F.isOutdoors;
+    if (out) {
+      this.env.warmth = 0;
+      this.env.setGust(0);
+      this.env.setAnxiety(0);
+      this.env.rippleGrass(0, 0);
+      this.env.update(dt, this.s.camera.camera, this.visitor.position);
+    }
+    const c = this.visitor.controller;
+    this.s.audio.surface = out ? 'cobble' : 'flagstone';
+    this.s.audio.update(dt, {
+      speed: F.running ? c.speed : 0,
+      sliding: false,
+      gust: 0,
+      playing: true,
+      peace: out && F.hope > 0.3,
+      anxiety: 0,
+      city: 0,
+      indoor: !out,
+      hush: F.hush,
+      hope: F.hope,
+    });
   }
 
   /** The house has her: only its sequence, the world and the sound run. */
@@ -329,6 +400,10 @@ export class ParkChapter implements Chapter {
   }
 
   update(rawDt: number): void {
+    if (this.finale.phase !== 'off') {
+      this.updateFinale(rawDt);
+      return;
+    }
     if (this.house.phase !== 'off') {
       this.updateHouse(rawDt);
       return;
@@ -417,6 +492,9 @@ export class ParkChapter implements Chapter {
       if (this.arriveTime > 2.4 && !this.house.active) {
         const cam = this.s.camera.camera;
         const look = cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(10).add(cam.position);
+        this.chaseCaught = c.caughtCount;
+        this.chaseTime = c.elapsed;
+        this.chaseWinner = this.versusWinner;
         this.house.start({ pos: cam.position.clone(), look, fov: cam.fov });
         this.onHouseBegin();
       }

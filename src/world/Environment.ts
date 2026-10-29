@@ -35,6 +35,15 @@ export class Environment {
   private afterglow: THREE.DirectionalLight;
   /** 0..1 — the ordinary evening (1) giving way to the park's night (0). */
   warmth = 0;
+  /** Stage 5: 0..1 — the park at peace after she escapes (like the false shortcut's calm, held). */
+  calm = 0;
+  /**
+   * Stage 5: the moon's shadows thrown from somewhere else — a low light
+   * behind her friends, so their shadows run up the path toward her.
+   */
+  lightOverride: { dir: THREE.Vector3; focus: THREE.Vector3; weight: number } | null = null;
+  private lightDir = new THREE.Vector3();
+  private shadowTight = false;
   private warmFog = new THREE.Color(0x4a3448);
   private nightHemiSky = new THREE.Color(COLORS.hemiSky);
   private warmHemiSky = new THREE.Color(0x7a6a8a);
@@ -265,13 +274,15 @@ export class Environment {
     this.peace = this.peaceTarget = 0;
     this.anxiety = 0;
     this.house.flare = 0;
+    this.calm = 0;
+    this.lightOverride = null;
     this.lamps.reset();
   }
 
   update(dt: number, camera: THREE.Camera, focus: THREE.Vector3): void {
     this.time += dt;
     this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 2.5);
-    this.peace += (this.peaceTarget - this.peace) * Math.min(1, dt * 0.8);
+    this.peace += (Math.max(this.peaceTarget, this.calm) - this.peace) * Math.min(1, dt * 0.8);
     const ambientGust = 0.12 * Math.max(0, Math.sin(this.time * 0.37) * Math.sin(this.time * 0.13)) * (1 - this.peace);
     const gust = this.gust + ambientGust;
     this.pavement.update(dt);
@@ -305,9 +316,27 @@ export class Environment {
     (this.scene.background as THREE.Color).copy(fog.color);
 
     // Moon shadow follows the Visitor so shadows stay crisp where it matters.
-    this.moonLight.target.position.set(focus.x + 6, focus.y, focus.z);
-    this.moonLight.position.copy(this.moonLight.target.position).addScaledVector(this.sky.moonDir, 70);
-    this.moonLight.position.y = Math.max(this.moonLight.position.y, focus.y + 30);
+    const lo = this.lightOverride;
+    if (lo) {
+      this.moonLight.target.position.copy(lo.focus);
+      this.lightDir.copy(this.sky.moonDir).lerp(lo.dir, lo.weight).normalize();
+    } else {
+      this.moonLight.target.position.set(focus.x + 6, focus.y, focus.z);
+      this.lightDir.copy(this.sky.moonDir);
+    }
+    this.moonLight.position.copy(this.moonLight.target.position).addScaledVector(this.lightDir, 70);
+    if (!lo) this.moonLight.position.y = Math.max(this.moonLight.position.y, focus.y + 30);
+    // A low light needs a tighter shadow frustum, or the long shadows go soft and blocky.
+    const sc = this.moonLight.shadow.camera;
+    const tight = !!lo;
+    if (tight !== this.shadowTight) {
+      this.shadowTight = tight;
+      sc.left = tight ? -9 : -28;
+      sc.right = tight ? 9 : 28;
+      sc.top = tight ? 7 : 22;
+      sc.bottom = tight ? -7 : -22;
+      sc.updateProjectionMatrix();
+    }
     this.fill.position.set(focus.x - 2.2, focus.y + 2.6, focus.z + 2.6);
   }
 }

@@ -24,7 +24,8 @@ const AISLE_PULL = 10.2;
 /** Dress clock: the gown's reveal and the veil. */
 const REVEAL = [1.2, 7.2] as const;
 const VEIL = [5.6, 8.0] as const;
-const DRESS_END = 14.8;
+/** Stage 5 follows straight on (laughter outside), so the house no longer fades to its end card here. */
+const DRESS_END = 13.4;
 /** Resist counts that earn a remark (see HOUSE_LINES.resist). */
 const RESIST_REMARKS = [1, 2, 3, 5, 8];
 
@@ -67,6 +68,9 @@ function wrapAngle(a: number): number {
  *
  * Like the prologue it runs on its own clocks with cues that fire once, so
  * pausing freezes it and a skip simply ends it.
+ *
+ * Stage 5: when it ends (onComplete) the finale takes her from the mirror
+ * to the window, in the same room, without a cut.
  */
 export class HouseSequence {
   readonly interior = new HouseInterior();
@@ -215,7 +219,7 @@ export class HouseSequence {
    * Skip: jump to the final tableau — gowned under the arch, the sheet off
    * the mirror — and end. The caller fades around this.
    */
-  finish(): void {
+  finish(notify = true): void {
     if (this.phase === 'off' || this.complete) return;
     if (!this.interior.visible) this.enterInterior();
     this.s.fade(1, 0);
@@ -243,7 +247,15 @@ export class HouseSequence {
     this.phase = 'done';
     this.complete = true;
     this.s.prompt(null);
-    this.onComplete();
+    if (notify) this.onComplete();
+  }
+
+  /** Debug / test: straight to the gowned tableau under the arch, without handing on. */
+  jumpToTableau(): void {
+    this.reset();
+    this.phase = 'dress';
+    this.visitor.useGeneratedBody(true);
+    this.finish(false);
   }
 
   private setCues(cues: Cue[]): void {
@@ -392,8 +404,6 @@ export class HouseSequence {
     if (d >= DRESS_END && !this.complete) {
       this.phase = 'done';
       this.complete = true;
-      // Back up from black onto the tableau, behind the end card.
-      this.s.fade(0, 2.2);
       this.onComplete();
     }
   }
@@ -568,7 +578,6 @@ export class HouseSequence {
       { at: d0 + 9.8, run: () => this.sound('sheet') },
       { at: d0 + 11.0, run: () => (this.sound('bell'), V.express({ fear: 0.7, surprise: 0.5 }, 5)) },
       { at: d0 + 11.4, run: () => this.s.say(HOUSE_LINES.mirror, 3.2) },
-      { at: d0 + 13.0, run: () => this.s.fade(1, 1.6) },
     ];
   }
 

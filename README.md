@@ -4,7 +4,11 @@ A cinematic 3D psychological horror chase with dark satire, built with **Three.j
 
 A young woman goes to an old park at night to meet someone from a dating app. The park comes alive and herds her toward a haunted house. The Demon behind it is intelligent, sarcastic, and increasingly anxious that she might get away.
 
-> **Stage 4 (this build): the house.** The chase no longer stops at the door. White silk ribbons reach out of the doorway, take her by the wrists and waist, and draw her inside; the door slams. The front hall is laid out as a wedding with no guests: empty chairs, a crimson aisle, candles that light themselves, a dead-rose arch and a tall mirror under a sheet. The ribbons walk her down the aisle, and under the arch the wedding gown grows over her while her coat dissolves. The veil settles, her face is made to smile, and the sheet slips off the mirror. She can pull back (SPACE) the whole way. It changes nothing, but the house keeps count.
+> **Stage 5 (this build): the window.** After the mirror, there's laughter outside. Her three friends stand on the lawn under a lamp, waving. The glass fogs, and an invisible finger draws their true faces on it, exactly over them. She wipes them away (SPACE); they come back, drawn harder. She chooses: leave through the window, or stay. Staying shows her a little more, then lets her choose again. The window opens, the gown catches on the sill, vines grow from the frame, and she tears free (SPACE) onto the lawn. The house reaches after her once, stops, and shuts the window. It says nothing more. Then the chase's own controls return for the run back along a park that has stopped attacking her, toward her friends, who look less and less right. Each friend becomes what she is, in her own body. She understands, turns toward the house, and is taken. The house stands alone. *It was never the house you should have feared.*
+>
+> Stage 4 is on branch `stage-4`.
+
+> **Stage 4: the house.** The chase no longer stops at the door. White silk ribbons reach out of the doorway, take her by the wrists and waist, and draw her inside; the door slams. The front hall is laid out as a wedding with no guests: empty chairs, a crimson aisle, candles that light themselves, a dead-rose arch and a tall mirror under a sheet. The ribbons walk her down the aisle, and under the arch the wedding gown grows over her while her coat dissolves. The veil settles, her face is made to smile, and the sheet slips off the mirror. She can pull back (SPACE) the whole way. It changes nothing, but the house keeps count.
 >
 > Stage 3 is on branch `stage-3`.
 
@@ -26,7 +30,7 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Debug: `?house` starts at the foot of the porch, so Stage 4 begins at once. `?skipintro` goes straight to the chase. `?visitor=test` plays the Visitor as the CC0 GLB test model (`?visitor=generated` forces the generated one). `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
+Debug: `?stage5=window|choice|run|reveal` starts Stage 5 at that checkpoint (development only; it is not in any menu). `?house` starts at the foot of the porch, so Stage 4 begins at once. `?skipintro` goes straight to the chase. `?visitor=test` plays the Visitor as the CC0 GLB test model (`?visitor=generated` forces the generated one). `?lab` shows the cast in a studio view (`?lab&glb` also loads the GLB pipeline test model). `?x=280` starts further along the course. The false shortcut is at about x 124–166, the pavement hill starts around x 200, and the slide around x 290.
 
 ## Modes and controls
 
@@ -40,9 +44,58 @@ From the title screen, choose **PLAY ALONE** (vs the AI Demon) or **LOCAL 1V1**.
 | Either | **Esc / P** | Pause. **R** retries the chase from the gate (paused or end screen). The pause menu and end card also offer **Replay Story** (the prologue again); both keep the selected mode. **Enter** plays solo from the title. |
 | Intro | **Hold Esc** (1 s) | Skip the prologue. During the intro, Esc only skips; **P** pauses. |
 | The house | **Space** (tap) | Pull back against the ribbons. She stops for a moment, then they take up the slack. |
-| The house | **Hold Esc** (1 s) | Skip to the gowned tableau and the end card. **P** pauses. |
+| The house | **Hold Esc** (1 s) | Skip ahead: from the house to the window, from the window to the run, from the reveal to the closing shot. **P** pauses. |
+| The window | **Space** (tap) | Wipe the glass. Three wipes clear it. |
+| The window | **↑ / ↓**, **Space** | Choose *Leave through the window* or *Stay inside*. Clicking an option also works. |
+| The window | **Space** (tap) | Pull free of the frame: six hard pulls. If she stops pulling, the vines take a little back. |
+| The run back | **↑ / ↓**, **Space** | The chase's controls. Escape pauses, as in the chase. |
 
 In 1v1, the Demon wins if she is caught 5 times before she reaches the house; otherwise the Visitor wins. Both modes then play the house sequence.
+
+## Stage 5: the window, the false escape, the reveal
+
+### The story beats (`story/finale/Finale.ts`)
+
+| Beat | What happens |
+| --- | --- |
+| `WINDOW_DISCOVERY` | Laughter outside. She turns from the mirror and goes to the tall window between the arch and the mirror. Her friends are on the lawn by a lamp, and Juno waves. She is relieved, puts her palms on the glass and knocks. |
+| `WINDOW_CONDENSATION` | The frame creaks, the drapes stir in still air, the glass goes cold, and fog creeps in from the frame. |
+| `WINDOW_WARNING` | A finger draws, first scratches nobody could read, then a face over each friend, exact from the camera's view: Odette smiling past her ears with a dragged jaw, Juno with four eyes and a long face, Wren with her head high on a stalk of neck and long jointed limbs. She recoils. |
+| `WINDOW_WIPE` | TAP SPACE — WIPE GLASS. Her sleeve clears the fog wherever her arm actually is. After three wipes the glass is clear, and it's just her friends, waving. |
+| `WINDOW_WARNING_RETURN` | The glass fogs again, fast, and the faces come back drawn twice as hard, with slashes and runs of water. She takes it as the house trying to frighten her off. |
+| `WINDOW_CHOICE` | LEAVE THROUGH THE WINDOW / STAY INSIDE, set into the bottom of the frame. |
+| `WINDOW_STAY_WARNING` | She steps back. The house goes still and exhales. Outside, the friends stop waving. Odette is too tall for a fraction of a second. While the Visitor looks away, Wren appears at the glass with fingers too long, and they leave marks in the fog. Then she's gone, and the choice returns. A second Stay is shorter: the three only take one step closer, together. |
+| `WINDOW_ESCAPE` | The drapes thrash, and the frame and the door behind her groan. The latch resists, then gives, and the fog thins in the night air. She climbs onto the sill. |
+| `WINDOW_STRUGGLE` | The gown catches on the sill, and vines come out of the frame. TAP SPACE — PULL FREE. The gown tears and she falls out. The hem stays ragged and the veil short from here on. |
+| `OUTSIDE_LANDING` | She lands on the grass below the house's side window, gets up and looks back. A vine follows her out of the window, stops short of her and withdraws. The window shuts and the house dims. There is no line and no remark. |
+| `FINAL_RUN` | The chase's controls, back along the park toward the gate (`VisitorController.dir = -1`). Everything is calm: no hazards, no Demon, warm steady lamps and a few warm notes. The only obstacles are ordinary debris (a log, a stone, a branch), which trip her if she runs into them. Her friends wave and call. |
+| `FINAL_UNEASE` | Odette stops waving and keeps smiling, Juno's head turns too far, and Wren goes still. Their shadows run up the path toward her from a light that isn't there: one with horns, one with extra arms, one a beat behind. The music goes, then the wind. All three turn to her at once, the camera lowers, and her legs slow. |
+| `FRIENDS_REVEAL` | Directed, not playable. **Odette:** the smile keeps widening, her eyes sink, her neck lengthens, her fingers and arms grow, and she twists and rises. **Juno:** one step toward the Visitor, then a stop. A shoulder goes up and over, an elbow bends the wrong way, and her spine arches and folds while her face stays fixed on the Visitor. With four eyes and a long face, she unfolds tall. **Wren:** the most ordinary of the three. A slow step, a tilt, then her head keeps turning to show a second face. Her neck grows, and black limbs come out of her back. |
+| `VISITOR_REALIZATION` | The phone in Odette's hand shows the same dating-app conversation. The Visitor looks from one friend to the next, her face moving through confusion, recognition, disbelief and terror, and she takes a step back. The camera finds the house far behind her, warm in every window. She turns toward it. |
+| `FINAL_ATTACK` | They come: a tilt, an impossibly long step, a glide without walking. She backs away. Odette moves faster than anything that size should. A cut to the Visitor's face, black before contact, then silence. |
+| `FINAL_ENDING` | The house alone under the moon, its door grown shut. A vine comes out from under the door toward the path, hesitates and stops. A creak like a sigh. *IT WAS NEVER THE HOUSE YOU SHOULD HAVE FEARED.* Black. Then REPLAY STORY / RETRY CHASE / MAIN MENU. |
+
+**How it's built:**
+- **The fog** (`world/WindowFog.ts`) is a shader on the window's two leaves, so it swings with them when the window opens. It grows in from the frame by `cover`, with beads of water and a cold tint. Everything that clears it (finger lines, her sleeve, drips) is painted into a mask canvas that the shader reads. Strokes are drawn along their length at a finger's pace, and `refog()` lets the condensation close back over them.
+- **Alignment.** Each face is designed in metres around that friend's own eyes and projected onto the glass along rays from the drawing shot's camera (`HouseWindow.project`), so the marks sit over the friends wherever they stand. The friends' positions on the lawn are chosen so each one falls on clear glass rather than a bar of the frame. The drawing is 2.1 times life size, a mask over each of them.
+- **The window and the night outside it** (`world/HouseWindow.ts`) are part of the closed interior set: a hole in the far wall, casement leaves, drapes and frame vines, then a lawn, an iron fence, trees, a lamp and the sky. They are lit by the lamp, a cold moon and the hall's own light spilling out.
+- **The tear** is a field in the gown's shader (`WeddingDress.tear` and `dirt`): a ragged line, deepest at the back, plus grass stains. The veil (cloth) is shortened. Both last through the run.
+- **The transformations** (`characters/Corruption.ts`) work on each friend's own skeleton and head after the performer poses her:
+  - bone positions (the neck);
+  - bone scales (arms longer and thinner, fingers, legs);
+  - joints rotated past their limits;
+  - the head's morph targets (smile, jaw, wide eyes) driven beyond 1;
+  - darkened eyes and pallor.
+
+  A quaternion lock keeps a head facing forward while the body under it twists. Added parts grow out of existing bones: Juno's second pair of eyes; Wren's second face, which reuses her own head mesh and morphs with a face painted in the same UV layout; Wren's limbs (`world/Vine.ts`, in black); and horns and arms that are shadow-only, so they appear only in what the friends cast. `reset()` restores every bone, scale and material.
+- **The wrong shadows.** `Environment.lightOverride` moves the moon's shadow light low behind the friends and tightens its frustum, so their shadows lengthen up the path toward her. Wren's `ShadowTwin` lags again.
+- **The run** reuses `VisitorController` and `ChaseCamera` with a direction (`dir`), a speed cap (her legs slowing) and `menace` (a lower, tighter frame). The Demon's systems don't run: the AI stops in single player, and the human Demon's powers stay off in 1v1.
+- **Sound** is all synthesized, with no audio assets:
+  - at the window: distant laughter, frost crackling and a fingertip squealing on wet glass;
+  - at the escape: the house exhaling, the latch, silk straining, a hard rip and the landing;
+  - on the run: breath and a distant "hey—!";
+  - at the reveal: dry bone cracks, wrong laughter, one long breath and a low rumble;
+  - the lunge, then a hard cut to silence.
 
 ## Stage 4: the house
 
@@ -54,7 +107,7 @@ In 1v1, the Demon wins if she is caught 5 times before she reaches the house; ot
 | `HOUSE_INTERIOR` | The door slams behind her. She turns and tries it (*"Locked. For your safety. Mostly mine."*). Candles light themselves in pairs down the aisle, and a held, slightly out-of-tune organ chord starts somewhere upstairs. The ribbons come again from the arch and walk her down the aisle between the empty chairs. |
 | `WEDDING_DRESS` | Under the arch the ribbons let go of her wrists, lift her arms and spiral down round her from the dark above. The gown grows over her from the right wrist and the waist outward, and her coat whitens and dissolves along the same field (`characters/WeddingDress.ts`). The chandelier lights. The veil settles from above. Her face is made to smile while her eyes stay frightened. The dust sheet slips from the mirror, and the glass is faintly lit: *"Not the mirror. Not yet."* |
 
-Then comes `STAGE_4_END` and the end card (*The Dress Fits*), which now also counts how many times she pulled back.
+Stage 5 follows straight on (see above). Before Stage 5, `STAGE_4_END` and the end card *The Dress Fits* came here.
 
 **Pulling back.** Tapping SPACE while the ribbons pull makes her heave back: she stops dead, the camera jolts and the ribbons go slack, then they take up the slack again. The house remarks on her 1st, 2nd, 3rd, 5th and 8th tries (*"That's three. I'm writing them down for the speech."*).
 
@@ -243,6 +296,17 @@ src/
 - **All textures and sounds are generated at runtime.** There are no asset files, and no voice acting: the Demon "speaks" in engraved text.
 - **Puddles use `MeshPhongMaterial`, deliberately.** It samples the equirect night panorama directly. `MeshStandardMaterial` would trigger Three.js's PMREM prefilter, whose shader produced an (harmless) HLSL precision warning on Windows/ANGLE and a compile stall mid-chase. All hazard shaders are also precompiled at load (`DemonAbilitySystem.prewarm`).
 - **Performance:** about 150–160 fps at 1600×900 on an RTX 4060 laptop GPU. On an integrated Intel GPU, expect much less; dynamic resolution compensates. On dual-GPU laptops, set the browser to *High performance* in Windows Graphics settings.
+
+## Known Stage 5 problems (for Stage 6)
+
+None of these blocks play; all are visual or a short stall.
+
+- **Freeze at the cut outside.** About 0.6 s on a black frame when she falls from the window and the park comes back (it was 0.8 s before the gown was prewarmed for outdoor lighting). The pavement reset and veil settle are not the cause (3 ms and 19 ms).
+- **The gown clips.** The skirt is a rigid, skinned bell, so it pushes through the sill when she crouches in the window and flares stiffly in the struggle.
+- **The vines are hard to see.** The frame vines in the struggle shot, and the vine that reaches from under the door in the closing shot, barely read against the dark.
+- **The window frames look flat.** The opened leaves of the house's escape window, seen from outside, read as flat orange slabs.
+- **Fingers clip through the phone.** In the phone close-up, Odette's lengthened fingers pass through it.
+- **The fog drawings are slightly off.** They sit over the friends, but a little high in places (Juno's drawn eyes are above her real ones), because the friends are still moving when the projection is taken.
 
 ## Roadmap
 

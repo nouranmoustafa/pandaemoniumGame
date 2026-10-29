@@ -9,6 +9,29 @@ export type DemonPhase = 'amused' | 'irritated' | 'desperate';
 export type Caster = 'ai' | 'human' | 'course';
 /** Stage 4's sound cues (the house sequence stays decoupled from the audio engine). */
 export type HouseSound = 'creak' | 'slam' | 'rattle' | 'candle' | 'organ' | 'silk' | 'bell' | 'sheet' | 'snap';
+/** Stage 5's sound cues. */
+export type FinaleSound =
+  | 'laughFar'
+  | 'frame'
+  | 'frost'
+  | 'scrape'
+  | 'curtain'
+  | 'exhale'
+  | 'groan'
+  | 'latch'
+  | 'strain'
+  | 'roots'
+  | 'tear'
+  | 'land'
+  | 'breath'
+  | 'call'
+  | 'bone'
+  | 'laughWrong'
+  | 'breathWrong'
+  | 'rumble'
+  | 'lunge'
+  | 'sigh'
+  | 'cut';
 
 export interface GameEvents {
   'visitor:caught': { by: CatchCause; x: number };
@@ -35,11 +58,12 @@ export interface GameEvents {
   'trick:bench': { encounter: number };
   'trick:lights': Record<string, never>;
   'trick:shortcut': { active: boolean };
-  'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number };
+  'chapter:complete': { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number; finale?: boolean };
   /** Prologue story beats and its sound cues (audio stays decoupled from the script). */
   'prologue:beat': { beat: string };
   'prologue:sound': { id: 'buzz' | 'notify' | 'swing' | 'branch' | 'flicker' | 'grass' | 'send' | 'laugh' };
   'house:sound': { id: HouseSound };
+  'finale:sound': { id: FinaleSound; gain?: number };
 }
 
 type Handler<T> = (payload: T) => void;

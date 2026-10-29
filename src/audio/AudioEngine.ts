@@ -1,4 +1,4 @@
-import type { CatchCause, EventBus, HazardKind, HouseSound } from '../core/Events';
+import type { CatchCause, EventBus, FinaleSound, HazardKind, HouseSound } from '../core/Events';
 import { SampleBank } from './SampleBank';
 
 /**
@@ -26,6 +26,8 @@ export class AudioEngine {
   private droneFilter!: BiquadFilterNode;
   private padGain!: GainNode;
   private peace = false;
+  private hopeTimer = 0;
+  private hopeStep = 0;
   // --- Prologue: the town at dusk ---
   private cityGain!: GainNode;
   private murmurGain!: GainNode;
@@ -71,6 +73,7 @@ export class AudioEngine {
     bus.on('trick:lights', () => this.hum());
     bus.on('prologue:sound', ({ id }) => this.prologueSound(id));
     bus.on('house:sound', ({ id }) => this.houseSound(id));
+    bus.on('finale:sound', ({ id, gain }) => this.finaleSound(id, gain ?? 1));
     bus.on('trick:shortcut', ({ active }) => {
       if (!active) {
         this.thud(40, 0.45);
@@ -319,7 +322,21 @@ export class AudioEngine {
   /** Continuous parameters, once per frame. */
   update(
     dt: number,
-    p: { speed: number; sliding: boolean; gust: number; playing: boolean; peace?: boolean; anxiety?: number; city?: number; prologue?: boolean; indoor?: boolean },
+    p: {
+      speed: number;
+      sliding: boolean;
+      gust: number;
+      playing: boolean;
+      peace?: boolean;
+      anxiety?: number;
+      city?: number;
+      prologue?: boolean;
+      indoor?: boolean;
+      /** Stage 5: 0..1 — the world falls silent (wind, drone, music). */
+      hush?: number;
+      /** Stage 5: 0..1 — the gentle theme on the run home. */
+      hope?: number;
+    },
   ): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -334,11 +351,24 @@ export class AudioEngine {
     this.duskPadGain.gain.setTargetAtTime(p.prologue ? Math.pow(city, 1.5) * 0.9 : 0, t, 1.5);
     // Indoors (Stage 4) the wind is only a draught under the door.
     const outside = p.indoor ? 0.12 : 1;
-    this.windGain.gain.setTargetAtTime(((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006) * (1 - city * 0.55) * outside, t, p.indoor ? 0.08 : 0.3);
+    const hush = p.hush ?? 0;
+    const hope = p.hope ?? 0;
+    this.windGain.gain.setTargetAtTime(((peace ? 0.06 : 0.18) + p.gust * 0.5 + Math.min(p.speed, 20) * 0.006) * (1 - city * 0.55) * outside * (1 - hush * 0.97), t, p.indoor ? 0.08 : 0.3);
     this.slideGain.gain.setTargetAtTime(p.sliding ? 0.05 + p.speed * 0.006 : 0, t, 0.15);
     this.slideFilter.frequency.setTargetAtTime(500 + p.speed * 45, t, 0.2);
-    this.padGain.gain.setTargetAtTime(peace ? 1 : 0, t, peace ? 1.5 : 0.4);
-    this.droneGain.gain.setTargetAtTime((peace ? 0.25 : 1 + anx * 0.8) * (1 - city * 0.95) * (p.indoor ? 0.55 : 1), t, 0.8);
+    this.padGain.gain.setTargetAtTime((peace ? 1 : 0) * (1 - hush), t, peace ? 1.5 : 0.4);
+    this.droneGain.gain.setTargetAtTime((peace ? 0.25 : 1 + anx * 0.8) * (1 - city * 0.95) * (p.indoor ? 0.55 : 1) * (1 - hush), t, hush > 0.5 ? 1.6 : 0.8);
+    // The run home: a few warm notes, unhurried, that thin out and stop as she nears them.
+    if (hope > 0.05) {
+      this.hopeTimer -= dt;
+      if (this.hopeTimer <= 0) {
+        const motif = [60, 64, 67, 72, 71, 67, 69, 64, 65, 62, 64, 60];
+        const m = motif[this.hopeStep++ % motif.length];
+        this.hopeTimer = 0.95 + (this.hopeStep % 4 === 0 ? 0.9 : 0);
+        this.pluck(440 * Math.pow(2, (m - 69) / 12), 0.055 * hope);
+        if (this.hopeStep % 4 === 1) this.pluck(440 * Math.pow(2, (m - 12 - 69) / 12), 0.035 * hope);
+      }
+    }
     if (city > 0.35) {
       this.carTimer -= dt;
       if (this.carTimer <= 0) {
@@ -361,7 +391,7 @@ export class AudioEngine {
 
     // Music box: a sparse, slightly detuned minor motif. Silent during the shortcut; hurried when anxious.
     this.musicTimer -= dt * (1 + anx * 0.8);
-    if (this.musicTimer <= 0 && !peace && city < 0.5) {
+    if (this.musicTimer <= 0 && !peace && city < 0.5 && hush < 0.3 && hope < 0.1) {
       this.musicTimer = p.playing ? 2.6 + Math.random() * 3 : 1.8 + Math.random() * 1.5;
       const scale = [0, 3, 7, 10, 12, 15, 14, 8];
       const note = scale[Math.floor(Math.random() * scale.length)];
@@ -608,9 +638,343 @@ export class AudioEngine {
     }
   }
 
-  /** Reset the once-per-run sounds (the owl). */
+  /** Stage 5: the window, the escape, the run and what waits at the end of it. */
+  private finaleSound(id: FinaleSound, v: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    switch (id) {
+      case 'laughFar':
+        this.laughter(v * 0.5, 1, 3200);
+        break;
+      case 'laughWrong':
+        // The same laugh, too slow and too low, and it stops mid-breath.
+        this.laughter(v * 0.9, 0.55, 1400, 0.6);
+        break;
+      case 'frame':
+        this.creak(0.7, 0.22 * v);
+        this.creakAt(0.35, 0.55, 0.12 * v);
+        break;
+      case 'groan':
+        this.creak(0.38, 0.3 * v);
+        this.thud(44, 0.3 * v);
+        break;
+      case 'frost':
+        // Glass going cold: a fine crackle.
+        for (let i = 0; i < 26; i++) {
+          const n = this.noise();
+          const hp = ctx.createBiquadFilter();
+          hp.type = 'highpass';
+          hp.frequency.value = 5000 + Math.random() * 3000;
+          const g = ctx.createGain();
+          n.connect(hp).connect(g).connect(this.sfx);
+          const at = t + Math.random() * 1.8;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.0002 + 0.03 * v * Math.random(), at + 0.002);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + 0.02);
+          n.start(at, Math.random() * 2, 0.03);
+        }
+        break;
+      case 'scrape':
+        this.fingerOnGlass(v);
+        break;
+      case 'curtain':
+        this.rustle(1.8);
+        this.whoosh();
+        break;
+      case 'exhale':
+      case 'sigh':
+        // The house lets out a breath: low and long, through old timber.
+        this.breathe(0.12 * v, id === 'sigh' ? 3.6 : 2.6, 420, this.amb);
+        if (id === 'sigh') this.creakAt(0.6, 0.32, 0.12 * v);
+        break;
+      case 'latch':
+        this.bell(1240, 0.03 * v);
+        this.thud(320, 0.12 * v);
+        break;
+      case 'strain': {
+        // Silk pulled taut: a rising, fibrous hiss.
+        const n = this.noise();
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.Q.value = 4;
+        bp.frequency.setValueAtTime(500, t);
+        bp.frequency.exponentialRampToValueAtTime(1500, t + 0.45);
+        const g = ctx.createGain();
+        n.connect(bp).connect(g).connect(this.sfx);
+        this.env(g, 0.16 * v, 0.12, 0.4);
+        n.start(t, Math.random() * 2, 0.6);
+        this.creak(1.6, 0.06 * v);
+        break;
+      }
+      case 'roots':
+        this.rustle(0.8);
+        this.creakAt(0.05, 0.45, 0.14 * v);
+        this.creakAt(0.3, 0.6, 0.1 * v);
+        break;
+      case 'tear':
+        this.rip(v);
+        break;
+      case 'land':
+        this.thud(58, 0.55 * v);
+        this.thud(110, 0.2 * v);
+        this.rustle(0.35);
+        break;
+      case 'breath':
+        for (let i = 0; i < 3; i++) setTimeout(() => this.breathe(0.07 * v, 0.45, 900), i * 620);
+        break;
+      case 'breathWrong':
+        // One breath, far too long, from something larger than a woman.
+        this.breathe(0.13 * v, 2.6, 380);
+        break;
+      case 'call':
+        this.voiceFar(v);
+        break;
+      case 'bone': {
+        // A joint going where joints don't: a dry crack, a creak inside it.
+        const n = this.noise();
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 2000;
+        const g = ctx.createGain();
+        n.connect(hp).connect(g);
+        g.connect(this.sfx);
+        g.connect(this.reverbSend);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.35 * v, t + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        n.start(t, Math.random() * 2, 0.08);
+        this.thud(160 + Math.random() * 60, 0.22 * v);
+        this.creakAt(0.04, 2.4 + Math.random() * 0.6, 0.06 * v);
+        break;
+      }
+      case 'rumble': {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 33;
+        const g = ctx.createGain();
+        o.connect(g).connect(this.amb);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.22 * v, t + 2.5);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 6);
+        o.start(t);
+        o.stop(t + 6.2);
+        break;
+      }
+      case 'lunge':
+        this.lungeSound(v);
+        break;
+      case 'cut':
+        // Silence, at once. It comes back slowly, for the house.
+        for (const [g, full] of [
+          [this.sfx, 1],
+          [this.amb, 1],
+          [this.reverbSend, 0.5],
+        ] as const) {
+          g.gain.cancelScheduledValues(t);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.setValueAtTime(0.0001, t + 2.2);
+          g.gain.exponentialRampToValueAtTime(full, t + 5);
+        }
+        break;
+    }
+  }
+
+  /** A fingertip dragged across wet glass: a squeal that wavers, over a hiss. */
+  private fingerOnGlass(v: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const dur = 0.9 + Math.random() * 0.6;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    const f0 = 1500 + Math.random() * 500;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.35, t + dur * 0.6);
+    o.frequency.linearRampToValueAtTime(f0 * 1.1, t + dur);
+    const trem = ctx.createOscillator();
+    trem.frequency.value = 23 + Math.random() * 9;
+    const tg = ctx.createGain();
+    tg.gain.value = 0.5;
+    const g = ctx.createGain();
+    g.gain.value = 0.5;
+    trem.connect(tg).connect(g.gain);
+    const env = ctx.createGain();
+    o.connect(g).connect(env);
+    env.connect(this.sfx);
+    env.connect(this.reverbSend);
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.02 * v, t + 0.08);
+    env.gain.setValueAtTime(0.02 * v, t + dur - 0.2);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    trem.start(t);
+    o.stop(t + dur + 0.05);
+    trem.stop(t + dur + 0.05);
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 3200;
+    bp.Q.value = 2;
+    const ng = ctx.createGain();
+    n.connect(bp).connect(ng).connect(this.sfx);
+    this.env(ng, 0.02 * v, 0.05, dur);
+    n.start(t, Math.random() * 2, dur + 0.1);
+  }
+
+  /** The gown tears: a hard rip, grainy, falling in pitch. */
+  private rip(v: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.5;
+    bp.frequency.setValueAtTime(3600, t);
+    bp.frequency.exponentialRampToValueAtTime(700, t + 0.4);
+    const grain = ctx.createGain();
+    grain.gain.value = 0.5;
+    const sq = ctx.createOscillator();
+    sq.type = 'square';
+    sq.frequency.value = 70;
+    const sqg = ctx.createGain();
+    sqg.gain.value = 0.5;
+    sq.connect(sqg).connect(grain.gain);
+    const g = ctx.createGain();
+    n.connect(bp).connect(grain).connect(g);
+    g.connect(this.sfx);
+    g.connect(this.reverbSend);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6 * v, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    n.start(t, Math.random() * 2, 0.5);
+    sq.start(t);
+    sq.stop(t + 0.5);
+  }
+
+  /** Far up the path, a friendly voice: "hey—!" (vowel formants on a soft buzz). */
+  private voiceFar(v: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.linearRampToValueAtTime(360, t + 0.18);
+    o.frequency.linearRampToValueAtTime(280, t + 0.5);
+    const g = ctx.createGain();
+    for (const [f, q] of [
+      [650, 6],
+      [1900, 8],
+    ] as const) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      o.connect(bp).connect(g);
+    }
+    g.connect(this.amb);
+    g.connect(this.reverbSend);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05 * v, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    o.start(t);
+    o.stop(t + 0.6);
+  }
+
+  /** All at once: a rush, a shriek, and a low roar under it. */
+  private lungeSound(v: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(400, t);
+    bp.frequency.exponentialRampToValueAtTime(3000, t + 0.25);
+    const g = ctx.createGain();
+    n.connect(bp).connect(g).connect(this.sfx);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.7 * v, t + 0.12);
+    n.start(t, Math.random(), 0.4);
+    for (const [type, f0, f1, vol, lp] of [
+      ['sawtooth', 520, 1500, 0.25, 1800],
+      ['sawtooth', 48, 90, 0.3, 400],
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.25);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = lp;
+      const og = ctx.createGain();
+      o.connect(f).connect(og).connect(this.sfx);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(vol * v, t + 0.12);
+      o.start(t);
+      o.stop(t + 0.4);
+    }
+  }
+
+  /** Laughter: a few voiced bursts. rate < 1 slows and lowers it; cut ends it early. */
+  private laughter(vol: number, rate: number, bright: number, cut = 1): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const n = Math.round(6 * cut);
+    for (let i = 0; i < n; i++) {
+      const at = t + (i * 0.17) / rate + Math.random() * 0.03;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime((310 - i * 8) * rate * (1 + Math.random() * 0.06), at);
+      o.frequency.linearRampToValueAtTime((260 - i * 8) * rate, at + 0.12 / rate);
+      const f1 = ctx.createBiquadFilter();
+      f1.type = 'bandpass';
+      f1.frequency.value = 800 * Math.sqrt(rate);
+      f1.Q.value = 5;
+      const f2 = ctx.createBiquadFilter();
+      f2.type = 'lowpass';
+      f2.frequency.value = bright;
+      const g = ctx.createGain();
+      o.connect(f1).connect(f2).connect(g);
+      g.connect(this.amb);
+      g.connect(this.reverbSend);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.0002 + vol * 0.12 * (1 - i / (n + 2)), at + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.13 / rate);
+      o.start(at);
+      o.stop(at + 0.16 / rate);
+    }
+  }
+
+  /** A breath: band-passed noise that swells and falls. */
+  private breathe(vol: number, dur: number, center: number, out: GainNode = this.sfx): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = center;
+    bp.Q.value = 0.8;
+    const g = ctx.createGain();
+    n.connect(bp).connect(g).connect(out);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.start(t, Math.random() * 2, dur + 0.1);
+  }
+
+  /** Reset the once-per-run sounds (the owl), and lift any silence Stage 5 left behind. */
   resetAmbience(): void {
     this.owlDone = false;
+    this.hopeStep = 0;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (const [g, full] of [
+      [this.sfx, 1],
+      [this.amb, 1],
+      [this.reverbSend, 0.5],
+    ] as const) {
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(full, t, 0.3);
+    }
   }
 
   /** A car going by somewhere behind the houses. */

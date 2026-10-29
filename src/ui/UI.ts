@@ -30,6 +30,10 @@ export class UI {
   /** Stage 4's in-scene prompt (pull back), styled like the hint. */
   private prompt = el('div', 'hint prompt');
   private subtitle = el('div', 'subtitle');
+  /** Stage 5: the choice at the window, set into the bottom of the frame. */
+  private choice = el('div', 'choice');
+  /** Stage 5: the last line, over the closing shot (above the fade). */
+  private caption = el('div', 'caption');
   private effort = el('div', 'effort', '<i></i>');
   private hurt = el('div', 'hurt');
   private dodge = el('div', 'dodge-flash');
@@ -67,8 +71,9 @@ export class UI {
       <p>Player one is the Visitor, on the keyboard. Player two is the <em>Demon</em>, with the <kbd>MOUSE</kbd>: choose Grass, Wind, Water or Fire, then click the lit path ahead of her. Right-click cancels.</p>
       <p>The Demon wins if she is caught ${MODE_TUNING.versusCatchesToWin} times before the house. It may not close every lane, strike without warning, or kick her while she's down.</p>
       <p>At the house, <kbd>SPACE</kbd> pulls back against whatever has hold of her. It won't help. It will be noted.</p>
+      <p>At the window, <kbd>SPACE</kbd> wipes the glass; <kbd>↑</kbd><kbd>↓</kbd> and <kbd>SPACE</kbd> choose; <kbd>SPACE</kbd>, tapped hard, pulls her free.</p>
       <p><kbd>ESC</kbd> or <kbd>P</kbd> pause. During the opening and the house, <em>hold</em> <kbd>ESC</kbd> to skip.</p>`;
-    this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE IV — THE HOUSE'));
+    this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE V — THE WINDOW'));
 
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
     const pm = el('div', 'menu');
@@ -91,7 +96,7 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade);
+    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.choice, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade, this.caption);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -134,6 +139,30 @@ export class UI {
   setPrompt(html: string | null): void {
     if (html) this.prompt.innerHTML = html;
     this.prompt.classList.toggle('show', !!html);
+  }
+
+  /**
+   * The window's choice: a few words in the lower frame, the selected one
+   * lit. null hides it. Clicking an option picks it.
+   */
+  showChoice(options: string[] | null, selected: number, onPick?: (i: number) => void): void {
+    this.choice.classList.toggle('show', !!options);
+    if (!options) return;
+    this.choice.innerHTML = '';
+    options.forEach((o, i) => {
+      const b = el('button', i === selected ? 'on' : '', o);
+      b.addEventListener('click', () => {
+        b.blur();
+        onPick?.(i);
+      });
+      this.choice.append(b);
+    });
+    this.choice.append(el('p', 'choice-keys', '↑ / ↓ — SELECT &nbsp;·&nbsp; SPACE — CONFIRM'));
+  }
+
+  setCaption(text: string | null): void {
+    if (text) this.caption.textContent = text;
+    this.caption.classList.toggle('show', !!text);
   }
 
   showPause(v: boolean): void {
@@ -180,6 +209,7 @@ export class UI {
   }
 
   showEnd(caught: number, time: number, line: string, winner?: 'demon' | 'visitor', resisted = 0): void {
+    this.end.classList.remove('finale');
     const title = winner === 'demon' ? 'The Demon Wins' : winner === 'visitor' ? 'The Visitor Wins' : 'The Dress Fits';
     this.end.innerHTML = `
       <h2>${title}</h2>
@@ -200,7 +230,24 @@ export class UI {
     this.end.classList.add('show');
   }
 
+  /** Stage 5's end: black, a moment of silence, then the way back in. */
+  showFinaleEnd(caught: number, time: number, winner?: 'demon' | 'visitor'): void {
+    const chase = winner === 'demon' ? 'THE DEMON WON THE CHASE' : winner === 'visitor' ? 'THE VISITOR WON THE CHASE' : `CAUGHT ${caught}&nbsp;&nbsp;·&nbsp;&nbsp;${time.toFixed(1)}s`;
+    this.end.innerHTML = `<p class="stats">${chase}</p>`;
+    const m = el('div', 'menu');
+    const replay = el('button', '', 'REPLAY STORY');
+    const retry = el('button', '', 'RETRY CHASE');
+    const quit = el('button', '', 'MAIN MENU');
+    replay.addEventListener('click', this.endHandlers.onReplayStory);
+    retry.addEventListener('click', this.endHandlers.onRetryChase);
+    quit.addEventListener('click', this.endHandlers.onQuit);
+    m.append(replay, retry, quit);
+    this.end.append(m);
+    this.end.classList.add('show', 'finale');
+  }
+
   hideEnd(): void {
+    this.end.classList.remove('finale');
     this.end.classList.remove('show');
   }
 

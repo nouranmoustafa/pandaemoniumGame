@@ -39,6 +39,10 @@ export class VisitorController {
   sprintTaps = 0;
   /** Inputs are ignored while false (title screen, ending). */
   controllable = false;
+  /** Run direction along X: +1 toward the house (the chase), -1 away from it (Stage 5's final run). */
+  dir: 1 | -1 = 1;
+  /** Upper bound on running speed (Stage 5: she slows as something feels wrong). */
+  speedCap = Infinity;
 
   // --- External forces (set by hazards each frame) ---
   private traction = 1;
@@ -73,6 +77,8 @@ export class VisitorController {
     this.usedDodge = false;
     this.sprintTaps = 0;
     this.controllable = false;
+    this.dir = 1;
+    this.speedCap = Infinity;
     this.traction = 1;
     this.windAccel = this.windDrag = 0;
     this.windPushDir = 0;
@@ -177,7 +183,7 @@ export class VisitorController {
     this.headwind = damp(this.headwind, windDrag, 4, dt);
 
     // --- Ground ---
-    this.slope = ground.slopeAt(this.x + 0.6, this.z);
+    this.slope = ground.slopeAt(this.x + 0.6 * this.dir, this.z) * this.dir;
     this.roll = ground.rollAngle();
 
     // --- Speed ---
@@ -195,6 +201,7 @@ export class VisitorController {
         if (this.stumbling) target *= lerp(RUN.stumbleSpeedFactor, 1, smoothstep(0.2, RUN.stumbleDuration, this.stumbleTime));
         target *= 1 - windDrag * 0.42;
         target += this.tailwind;
+        target = Math.min(target, this.speedCap);
         const rate = (target > this.speed ? RUN.accel : RUN.decel) * lerp(0.45, 1, traction);
         this.speed = damp(this.speed, target, rate, dt);
         break;
@@ -210,7 +217,7 @@ export class VisitorController {
     }
     this.slideBlend = damp(this.slideBlend, this.mode === 'slide' ? 1 : 0, 5, dt);
 
-    this.x += this.speed * dt;
+    this.x += this.speed * dt * this.dir;
     const gy = ground.heightAt(this.x, this.z);
     // Follow the ground tightly; a little lag when sliding over ripples reads as weight.
     this.y = this.mode === 'slide' ? damp(this.y, gy, 18, dt) : damp(this.y, gy, 30, dt);

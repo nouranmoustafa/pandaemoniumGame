@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
 import { ChaseCamera } from '../camera/ChaseCamera';
 import { ParkChapter } from '../story/park/ParkChapter';
+import type { FinaleJump } from '../story/finale/Finale';
 import type { HouseBeat } from '../story/house/HouseSequence';
 import type { PrologueBeat } from '../story/prologue/Prologue';
 import { UI } from '../ui/UI';
@@ -15,6 +16,8 @@ export interface GameOptions {
   startX?: number;
   /** Debug/testing: go straight to the chase (?skipintro). */
   skipIntro?: boolean;
+  /** Debug/testing: start Stage 5 at a checkpoint (?stage5=window|choice|run|reveal). */
+  stage5?: FinaleJump;
 }
 
 /** Seconds Escape must be held to skip the prologue. */
@@ -51,7 +54,7 @@ export class Game {
   readonly chapter: ParkChapter;
   private post: PostFX;
   private timer = new THREE.Timer();
-  private endInfo: { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number } = { caught: 0, time: 0 };
+  private endInfo: { caught: number; time: number; winner?: 'demon' | 'visitor'; resisted?: number; finale?: boolean } = { caught: 0, time: 0 };
   private fade: Fade | null = null;
   private resumeTo: 'prologue' | 'playing' | 'house' = 'playing';
   private skipHold = 0;
@@ -101,6 +104,7 @@ export class Game {
     this.renderer.setRenderTarget(this.post.composer.renderTarget1);
     this.chapter.abilities.prewarm(this.renderer, this.scene, this.camera.camera);
     this.chapter.house.prewarm(this.renderer, this.scene, this.camera.camera);
+    this.chapter.finale.prewarm(this.renderer, this.scene, this.camera.camera);
     this.renderer.setRenderTarget(null);
 
     this.bus.on('visitor:caught', () => {
@@ -113,6 +117,7 @@ export class Game {
     });
     this.chapter.prologue.onBeat = (b: PrologueBeat) => this.story.go(b);
     this.chapter.house.onBeat = (b: HouseBeat) => this.story.go(b);
+    this.chapter.finale.onBeat = (b: StoryState) => this.story.go(b);
     this.chapter.onHouseBegin = () => {
       if (this.states.is('playing')) this.states.go('house');
     };
@@ -170,7 +175,7 @@ export class Game {
         enter: (from) => {
           this.ui.showPause(false);
           this.ui.showHint(false);
-          this.ui.setLetterbox(true);
+          this.ui.setLetterbox(!this.chapter.finale.running);
           if (from !== 'paused') this.skipPrompt = 4;
         },
         exit: () => {
@@ -182,8 +187,14 @@ export class Game {
       .register('paused', { enter: () => this.ui.showPause(true), exit: () => this.ui.showPause(false) })
       .register('ended', {
         enter: () => {
-          this.story.go('STAGE_4_END');
+          this.story.go('FINAL_ENDING');
           this.ui.setLetterbox(false);
+          if (this.endInfo.finale) {
+            // Black, silence, and the way back in. (The card itself is black: the fade lifts off it.)
+            this.ui.showFinaleEnd(this.endInfo.caught, this.endInfo.time, this.endInfo.winner);
+            this.ui.setFade(0, 1.2);
+            return;
+          }
           const lines = [
             'It always did have your measurements.',
             'Something old. Something borrowed. Someone new.',
@@ -209,6 +220,19 @@ export class Game {
           // The skip prompt shows itself for a few seconds at the start.
           this.skipPrompt = 5;
         },
+      })
+      // Stage 5: the final run is played like the chase (no bars, Escape pauses); the reveal is not.
+      .register('FINAL_RUN', {
+        enter: () => {
+          this.ui.setLetterbox(false);
+          this.skipPrompt = 0;
+        },
+      })
+      .register('FRIENDS_REVEAL', {
+        enter: () => {
+          this.ui.setLetterbox(true);
+          this.ui.setEffort(0, false, false);
+        },
       });
   }
 
@@ -219,8 +243,10 @@ export class Game {
     this.input.onPress((a) => {
       const s = this.states.state;
       if (a === 'escape') {
-        // In the prologue and the house Escape is held to skip (see loop); it never pauses there.
-        if (s === 'prologue' || s === 'house') this.skipPrompt = Math.max(this.skipPrompt, 3);
+        // In the prologue and the house Escape is held to skip (see loop); it never pauses there —
+        // except on Stage 5's final run, which plays like the chase.
+        if (s === 'house' && this.chapter.finale.running) this.pause();
+        else if (s === 'prologue' || s === 'house') this.skipPrompt = Math.max(this.skipPrompt, 3);
         else if (s === 'playing') this.pause();
         else if (s === 'paused') this.resume();
       } else if (a === 'pause') {
@@ -250,6 +276,11 @@ export class Game {
 
   /** A new run: the prologue, unless a debug option asks for the chase directly. */
   private beginRun(): void {
+    if (this.opts.stage5) {
+      this.chapter.jumpFinale(this.opts.stage5);
+      this.states.go('house');
+      return;
+    }
     if (this.opts.startX !== undefined || this.opts.skipIntro) {
       if (this.opts.skipIntro && this.opts.startX === undefined) this.chapter.skipPrologue();
       else this.chapter.start(true);
@@ -358,7 +389,7 @@ export class Game {
   private trackChaseStory(): void {
     const c = this.chapter.visitor.controller;
     // Once the house has her, its own beats own the story.
-    if (this.story.is('STAGE_4_END') || this.chapter.house.phase !== 'off') return;
+    if (this.story.is('FINAL_ENDING') || this.chapter.house.phase !== 'off' || this.chapter.finale.phase !== 'off') return;
     if (c.mode === 'slide' || c.mode === 'arrive') this.story.go('PAVEMENT_SLIDE');
     else if (this.story.is('CHASE_GAMEPLAY') && this.chapter.mind.phase !== 'amused') this.story.go('CHASE_ESCALATION');
   }
@@ -368,7 +399,8 @@ export class Game {
     const rawDt = this.timer.getDelta();
     const dt = Math.min(rawDt, 1 / 20);
     const s = this.states.state;
-    if (s === 'prologue' || s === 'house') {
+    const running = s === 'house' && this.chapter.finale.running;
+    if ((s === 'prologue' || s === 'house') && !running) {
       if (this.input.isHeld('escape') && !this.fade) this.skipHold += dt;
       else this.skipHold = Math.max(0, this.skipHold - dt * 3);
       this.skipPrompt = Math.max(0, this.skipPrompt - dt);
@@ -377,6 +409,9 @@ export class Game {
         if (s === 'house') this.skipHouse();
         else this.skipPrologue();
       }
+    } else if (running) {
+      this.skipHold = 0;
+      this.ui.showSkip(false, 0);
     }
     if (s !== 'paused') this.chapter.update(dt);
     if (s === 'playing') this.trackChaseStory();

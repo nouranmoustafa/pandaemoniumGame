@@ -36,6 +36,10 @@ export class ChaseCamera {
   private handoff: { t: number; dur: number; pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null;
   private outPos = new THREE.Vector3();
   private outLook = new THREE.Vector3();
+  /** Which way along X the chase runs (Stage 5 runs back, away from the house). */
+  dir: 1 | -1 = 1;
+  /** 0..1 — Stage 5's approach to the friends: a lower, more threatening frame. */
+  menace = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, aspect, 0.1, 2500);
@@ -101,14 +105,17 @@ export class ChaseCamera {
     const p = s.position;
     const o = CAMERA.offset;
     const slide = s.slide;
+    const d = this.dir;
+    const m = this.menace;
     // Pull back and up as she speeds up; much more when sliding.
     const speedK = smoothstep(RUN.jogSpeed, RUN.sprintSpeed + 6, s.speed);
-    const back = o.x - speedK * 1.4 - slide * 1.3;
-    const up = o.y + speedK * 0.4 + slide * 1.1;
-    const side = o.z + speedK * 0.5 + slide * 0.7;
+    // Menace (Stage 5's approach): lower, closer, looking up the path at what waits there.
+    const back = o.x - speedK * 1.4 - slide * 1.3 + m * 2.2;
+    const up = o.y + speedK * 0.4 + slide * 1.1 - m * 2.7;
+    const side = o.z + speedK * 0.5 + slide * 0.7 - m * 2.6;
     const followZ = p.z * CAMERA.laneFollow;
-    this.desiredPos.set(p.x + back - this.lag, this.groundY + up, followZ + side);
-    this.desiredLook.set(p.x + CAMERA.lookAhead.x + slide * 2.5, this.groundY + CAMERA.lookAhead.y, followZ * 0.6 - 0.8);
+    this.desiredPos.set(p.x + (back - this.lag) * d, this.groundY + up, followZ + side);
+    this.desiredLook.set(p.x + (CAMERA.lookAhead.x + slide * 2.5 + m * 4) * d, this.groundY + CAMERA.lookAhead.y + m * 0.9, followZ * 0.6 - 0.8);
   }
 
   update(dt: number, s: CameraSubject): void {
@@ -155,7 +162,7 @@ export class ChaseCamera {
       this.look.lerp(this.desiredLook, 1 - Math.exp(-1.2 * dt));
     }
 
-    const targetFov = CAMERA.fov + smoothstep(RUN.jogSpeed, 20, s.speed) * 7 + s.slide * 3;
+    const targetFov = CAMERA.fov + smoothstep(RUN.jogSpeed, 20, s.speed) * 7 + s.slide * 3 - this.menace * 8;
     if (this.handoff) {
       const h = this.handoff;
       h.t += dt;

@@ -20,7 +20,23 @@ export type StoryState =
   | 'HOUSE_THRESHOLD'
   | 'HOUSE_INTERIOR'
   | 'WEDDING_DRESS'
-  | 'STAGE_4_END';
+  // Stage 5: the window, the escape, the false freedom and the reveal.
+  | 'WINDOW_DISCOVERY'
+  | 'WINDOW_CONDENSATION'
+  | 'WINDOW_WARNING'
+  | 'WINDOW_WIPE'
+  | 'WINDOW_WARNING_RETURN'
+  | 'WINDOW_CHOICE'
+  | 'WINDOW_STAY_WARNING'
+  | 'WINDOW_ESCAPE'
+  | 'WINDOW_STRUGGLE'
+  | 'OUTSIDE_LANDING'
+  | 'FINAL_RUN'
+  | 'FINAL_UNEASE'
+  | 'FRIENDS_REVEAL'
+  | 'VISITOR_REALIZATION'
+  | 'FINAL_ATTACK'
+  | 'FINAL_ENDING';
 
 export interface StateHandlers<Id extends string> {
   enter?: (from: Id | null) => void;
