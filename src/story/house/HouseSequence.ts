@@ -25,7 +25,7 @@ const AISLE_PULL = 10.2;
 const REVEAL = [1.2, 7.2] as const;
 const VEIL = [5.6, 8.0] as const;
 /** Stage 5 follows straight on (laughter outside), so the house no longer fades to its end card here. */
-const DRESS_END = 13.4;
+const DRESS_END = 15.6;
 /**
  * Stage 6 pacing: the house's cue clock runs faster than real time (the same beats, less
  * waiting); her walking speeds are raised to match, so she still reaches each mark.
@@ -715,7 +715,17 @@ export class HouseSequence {
       { at: d0 + 7.9, run: () => (V.express({ smile: 0.6, fear: 0.5, surprise: 0.2 }, 1.6), (V.stare = true)) },
       { at: d0 + 9.4, run: () => ((V.stare = false), V.lookAt(mirror, 0.9)) },
       { at: d0 + 9.8, run: () => this.sound('sheet') },
-      { at: d0 + 11.0, run: () => (this.sound('bell'), V.express({ fear: 0.7, surprise: 0.5 }, 5)) },
+      { at: d0 + 11.0, run: () => (this.sound('bell'), V.express({ fear: 0.4, surprise: 0.5, concern: 0.4 }, 2)) },
+      // The sheet is off: in the glass, herself — in the wedding dress. She gasps.
+      {
+        at: d0 + 12.1,
+        run: () => {
+          V.express({ surprise: 1, fear: 0.75, distress: 0.4 }, 4);
+          V.play('handsMouth');
+          this.s.bus.emit('finale:sound', { id: 'breath', gain: 1 });
+          this.s.shake(0.08);
+        },
+      },
     ];
   }
 
@@ -909,6 +919,30 @@ export class HouseSequence {
           o.pos.set(p.x - 3.4, p.y + 1.85, p.z + 1.5);
           o.look.copy(I.toWorld(ROOM.mirrorX - 1.2, 1.55, 0));
           o.fov = 40;
+        },
+      },
+      {
+        // Over her shoulder, into the glass: her reflection, gowned and veiled.
+        name: 'reflection',
+        start: d0 + 10.8,
+        blend: 1.4,
+        frame: (_t, o) => {
+          v.eyesWorld(E);
+          o.pos.copy(E).add(new THREE.Vector3(-1.0, 0.12, 0.62));
+          o.look.copy(I.toWorld(ROOM.mirrorX, 1.45, 0));
+          o.fov = 36;
+        },
+      },
+      {
+        // Her face as she understands what she is wearing.
+        name: 'gasp',
+        start: d0 + 12.0,
+        blend: 0.5,
+        frame: (_t, o) => {
+          v.eyesWorld(E);
+          o.pos.copy(E).add(new THREE.Vector3(1.25, -0.05, 0.42));
+          o.look.copy(E).add(new THREE.Vector3(0, -0.12, 0));
+          o.fov = 32;
         },
       },
     ];

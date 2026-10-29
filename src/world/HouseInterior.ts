@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp, damp, mulberry32, noise1, smoothstep } from '../core/math';
 import { HouseWindow, WINDOW } from './HouseWindow';
@@ -352,10 +353,16 @@ export class HouseInterior {
     const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.2, 1.6), new THREE.MeshStandardMaterial({ color: 0x3a2a14, metalness: 0.6, roughness: 0.4 }));
     mirrorFrame.position.set(ROOM.mirrorX, 1.75, 0);
     g.add(mirrorFrame);
-    this.mirrorGlow = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    // A real mirror: when the sheet comes off she sees herself, gowned. (It only renders while on screen.)
+    const reflection = new Reflector(new THREE.PlaneGeometry(1.36, 2.96), { textureWidth: 512, textureHeight: 1024, color: 0x9a9498, clipBias: 0.003 });
+    reflection.rotation.y = -Math.PI / 2;
+    reflection.position.set(ROOM.mirrorX - 0.085, 1.75, 0);
+    g.add(reflection);
+    // The glass's own faint light as it wakes, laid over the reflection.
+    this.mirrorGlow = new THREE.MeshBasicMaterial({ color: 0x000000, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.36, 2.96), this.mirrorGlow);
     glass.rotation.y = -Math.PI / 2;
-    glass.position.set(ROOM.mirrorX - 0.09, 1.75, 0);
+    glass.position.set(ROOM.mirrorX - 0.092, 1.75, 0);
     g.add(glass);
     const sheetGeo = new THREE.PlaneGeometry(1.9, 3.4, 12, 20);
     sheetGeo.rotateY(-Math.PI / 2);
@@ -534,7 +541,7 @@ export class HouseInterior {
     this.flare = Math.max(0, this.flare - dt * 0.4);
 
     this.doorPivot.rotation.y = -(1 - clamp(this.doorShut, 0, 1)) * 1.45;
-    this.mirrorGlow.color.setRGB(0.36, 0.35, 0.38).multiplyScalar(this.mirrorWake * (0.8 + 0.2 * noise1(t * 2, 8)));
+    this.mirrorGlow.color.setRGB(0.36, 0.35, 0.38).multiplyScalar(0.14 * this.mirrorWake * (0.8 + 0.2 * noise1(t * 2, 8)));
     // The fog on the glass is lit by the room: the candles warm it a little.
     this.fogTint.setRGB(0.15, 0.15, 0.17).lerp(this.warmTint, Math.min(1, chand * 0.5 + (sum / n) * 0.3));
     this.window.fog.setTint(this.fogTint);
@@ -551,10 +558,14 @@ export class HouseInterior {
       const y = B[i * 3 + 1];
       const z = B[i * 3 + 2];
       const top = smoothstep(-1.7, 1.7, y);
-      // Folds, deeper toward the floor; the sheet drops and its top edge sags off one corner.
+      // Folds, deeper toward the floor; the top edge sags off one corner first, then the whole
+      // sheet slides down off the glass into a heap on the floor in front of the frame.
       const fold = (Math.sin(z * 9 + y * 0.6) * 0.07 + Math.sin(z * 23 - y * 1.7) * 0.025) * (1 - top * 0.5) + (1 - top) * 0.1 * Math.abs(z);
       const drop = slip * (0.75 + 0.35 * (z / 0.95)) * top;
-      pos.setXYZ(i, B[i * 3] - fold - 0.04 * top, y - drop - slip * 0.1, z * (1 + 0.05 * (1 - top)));
+      const fall = smoothstep(0.3, 1, slip);
+      const heap = -1.8 + (0.06 + 0.16 * top) * (1 - 0.6 * Math.abs(z) / 0.95) + Math.sin(z * 11 + y * 3) * 0.03;
+      const hy = y - drop - slip * 0.1;
+      pos.setXYZ(i, B[i * 3] - fold - 0.04 * top - fall * (0.15 + 0.55 * top), hy + (heap - hy) * fall, z * (1 + 0.05 * (1 - top) + 0.12 * fall));
     }
     pos.needsUpdate = true;
     this.sheet.geometry.computeVertexNormals();
