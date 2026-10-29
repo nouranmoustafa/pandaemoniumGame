@@ -41,6 +41,11 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 export class DatingApp {
   readonly material: THREE.MeshBasicMaterial;
   private canvas = document.createElement('canvas');
+
+  /** The phone screen itself (shown on screen as an overlay while she reads the invitation). */
+  get screen(): HTMLCanvasElement {
+    return this.canvas;
+  }
   private g: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
   private portrait = document.createElement('canvas');

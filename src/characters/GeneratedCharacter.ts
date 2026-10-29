@@ -6,7 +6,7 @@ import type { CharacterDesign, Garment, Outfit } from './design';
 import { type FaceState, NEUTRAL } from './Expression';
 import { BodyBuilder } from './geo/body';
 import { buildHair, hairChains } from './geo/hair';
-import { buildHead, type HeadParts } from './geo/head';
+import { buildHead, HEAD_SCALE, type HeadParts } from './geo/head';
 import { normalizeAttributes } from './geo/loft';
 import { type BoneName, CharacterRig, type ChainSpec, type HandShape, RELAXED_HAND } from './rig/CharacterRig';
 import { eyeTexture, fabric, FacePainter, hairTexture } from './textures';
@@ -124,6 +124,15 @@ export class GeneratedCharacter implements VisitorAvatar {
     });
     const hair = buildHair(design.hair.kind, this.rig, R, center).map(normalizeAttributes);
     this.addSkinned(mergeGeometries(hair, false)!, this.hairMat, 'hair');
+    if (design.id === 'visitor') {
+      // A scalp of the same hair under the strands: tilted back, so it runs from the hairline
+      // over the crown to the nape and covers every gap from behind and above.
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(R * 1.04, 36, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), this.hairMat);
+      cap.scale.set(HEAD_SCALE.x * 1.05, HEAD_SCALE.y * 1.03, HEAD_SCALE.z * 1.05);
+      cap.position.copy(center).add(new THREE.Vector3(0, R * 0.02, -R * 0.05));
+      cap.rotation.x = -0.55;
+      this.rig.bone('head').add(cap);
+    }
 
     // Phone prop: rests in the right palm, screen toward the thumb side.
     this.phone = this.buildPhone();
@@ -165,7 +174,7 @@ export class GeneratedCharacter implements VisitorAvatar {
     const wr = r.bindPos.get('wristR')!;
     const mid = r.bindPos.get('middle1R')!;
     // Held by its lower edge, out past the fingertips, so the hand never covers the screen.
-    g.position.set(mid.x - wr.x + 0.022 * H, (mid.y - wr.y) * 1.4, mid.z - wr.z + 0.004 * H);
+    g.position.set(mid.x - wr.x + 0.026 * H, (mid.y - wr.y) * 1.75, mid.z - wr.z + 0.004 * H);
     return g;
   }
 

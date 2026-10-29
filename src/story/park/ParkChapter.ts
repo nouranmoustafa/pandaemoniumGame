@@ -140,7 +140,8 @@ export class ParkChapter implements Chapter {
     this.approach = new Approach(this.env, this.visitor, this.prologue.app, this.cine, s.camera, s.bus, {
       prompt: (html) => s.ui.setPrompt(html),
       hint: (v) => s.ui.showHint(v),
-    });
+      phone: (c) => s.ui.showPhone(c),
+    }, s.scene);
     this.approach.onChase = () => this.beginChase(false);
     this.house = new HouseSequence(s.scene, this.env, this.visitor, {
       bus: s.bus,
@@ -358,7 +359,7 @@ export class ParkChapter implements Chapter {
   private updateApproach(dt: number): void {
     const frame = this.approach.update(dt, this.s.input);
     if (frame) this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
-    else this.s.camera.update(dt, this.cameraSubject());
+    else this.s.camera.update(dt, this.approach.subject());
     const x = this.visitor.position.x;
     this.env.warmth = this.warmthAt(x);
     this.env.setAnxiety(0.4);

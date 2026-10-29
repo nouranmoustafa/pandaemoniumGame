@@ -34,6 +34,8 @@ export class UI {
   private choice = el('div', 'choice');
   /** Stage 5: the last line, over the closing shot (above the fade). */
   private caption = el('div', 'caption');
+  /** Her phone, held up to the player: the dating app's own screen. */
+  private phoneView = el('div', 'phone-view');
   private effort = el('div', 'effort', '<i></i>');
   private hurt = el('div', 'hurt');
   private dodge = el('div', 'dodge-flash');
@@ -96,7 +98,7 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.choice, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.fade, this.caption);
+    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.choice, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.phoneView, this.fade, this.caption);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -158,6 +160,12 @@ export class UI {
       this.choice.append(b);
     });
     this.choice.append(el('p', 'choice-keys', '↑ / ↓ — SELECT &nbsp;·&nbsp; SPACE — CONFIRM'));
+  }
+
+  /** Show the phone's screen (the app canvas itself) large on screen; null hides it. */
+  showPhone(screen: HTMLCanvasElement | null): void {
+    if (screen && screen.parentElement !== this.phoneView) this.phoneView.append(screen);
+    this.phoneView.classList.toggle('show', !!screen);
   }
 
   setCaption(text: string | null): void {

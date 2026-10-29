@@ -500,7 +500,7 @@ export function phoneHold(p: Pose, w: number, t: number, type: number): void {
   p.blendJoint('wristR', -0.15, -0.55, 0.1, w);
   const tap = type * Math.max(0, Math.sin(t * 14));
   // Thumb along the phone's edge (not across the screen); it dips to tap when typing.
-  p.blendHand('R', 0.62, 0.05, 0.0 + tap * 0.25, 0, w);
+  p.blendHand('R', 0.9, 0.02, 0.05 + tap * 0.2, 0, w);
   p.add('neck', 0.18 * w, 0, 0);
   p.add('head', 0.3 * w, -0.08 * w, 0);
   // The free hand drifts up to steady the phone when typing.

@@ -11,6 +11,8 @@ export interface CameraSubject {
   /** First person: her eyes, and which way she faces. */
   eyes?: THREE.Vector3;
   heading?: number;
+  /** First person: a point to look at instead of straight ahead (a curve in the path). */
+  look?: THREE.Vector3;
 }
 
 /**
@@ -114,6 +116,7 @@ export class ChaseCamera {
       const fz = Math.cos(h);
       this.desiredPos.set(s.eyes.x + fx * 0.12, s.eyes.y + 0.02, s.eyes.z + fz * 0.12);
       this.desiredLook.set(s.eyes.x + fx * 12, s.eyes.y - 0.55 - s.slide * 1.5, s.eyes.z + fz * 12);
+      if (s.look) this.desiredLook.copy(s.look);
       return;
     }
     const p = s.position;

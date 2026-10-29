@@ -16,10 +16,15 @@ import { HOUSE_FRONT } from '../../world/House';
  */
 export const FIRST_HOUSE_X = 31;
 const STOP_X = FIRST_HOUSE_X + HOUSE_FRONT - 11;
-/** How far back toward the gate she gets before the path turns her round. */
-const TURN_X = -7;
+/** Where the ground rises into a banked U and turns her round (her escape back toward the gate). */
+const ARC_X = -6;
+const ARC_R = 2.6;
+const ARC_IN = 1.0;
+const ARC_OUT = 4.2;
+/** Height of the banked ramp at angle a (0..π) and radius r. */
+const arcH = (a: number, r: number) => Math.sin(a) * (1.2 + (r - ARC_IN) * 0.6);
 
-type Phase = 'off' | 'walk' | 'phone' | 'flee' | 'loop';
+type Phase = 'off' | 'walk' | 'phone' | 'flee' | 'turn' | 'loop';
 
 /**
  * Between the prologue and the chase: she walks up the path to the old
@@ -47,8 +52,52 @@ export class Approach {
     private director: CinematicDirector,
     private camera: ChaseCamera,
     private bus: EventBus,
-    private say: { prompt: (html: string | null) => void; hint: (v: boolean) => void },
-  ) {}
+    private say: { prompt: (html: string | null) => void; hint: (v: boolean) => void; phone: (c: HTMLCanvasElement | null) => void },
+    scene: THREE.Scene,
+  ) {
+    // The ramp: a banked half-ring of the path's own cobbles, under the ground until it rises.
+    const nA = 40;
+    const nR = 8;
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= nA; i++)
+      for (let j = 0; j <= nR; j++) {
+        const a = (i / nA) * Math.PI;
+        const r = ARC_IN + ((ARC_OUT - ARC_IN) * j) / nR;
+        pos.push(ARC_X - r * Math.sin(a), arcH(a, r), -r * Math.cos(a));
+        uv.push((a * ARC_R) / 1.5, (r - ARC_IN) / 1.5);
+        col.push(0.8, 0.8, 0.8);
+        if (i < nA && j < nR) {
+          const k = i * (nR + 1) + j;
+          idx.push(k, k + 1, k + nR + 1, k + 1, k + nR + 2, k + nR + 1);
+        }
+      }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const pm = env.pavement.mesh.material as THREE.MeshStandardMaterial;
+    const mat = pm.clone();
+    mat.side = THREE.DoubleSide;
+    this.ramp = new THREE.Mesh(geo, mat);
+    this.ramp.receiveShadow = this.ramp.castShadow = true;
+    this.ramp.visible = false;
+    scene.add(this.ramp);
+  }
+
+  private ramp: THREE.Mesh;
+  private rampUp = 0;
+  private rampTarget = 0;
+  private arcA = 0;
+  private arcSpeed = 0;
+  private arcY = 0;
+  private arcZ0 = 0;
+  private lookTmp = new THREE.Vector3();
+  private arcGround = { heightAt: () => this.arcY, slopeAt: () => 0, rollAngle: () => 0 };
 
   get active(): boolean {
     return this.phase !== 'off';
@@ -75,6 +124,10 @@ export class Approach {
   reset(): void {
     this.phase = 'off';
     this.time = 0;
+    this.fleeT = -1;
+    this.rampUp = this.rampTarget = 0;
+    this.ramp.visible = false;
+    this.say.phone(null);
     this.cues = [];
     this.cueIndex = 0;
   }
@@ -100,14 +153,17 @@ export class Approach {
     // Phone cues are queued when she arrives (see update).
     this.arrivalCues = [
       { at: 0.1, run: () => (sound('buzz'), P.setPhone(1), P.express({ concern: 0.3, surprise: 0.2 }, 3)) },
+      // Her phone, held up to us: the same app. The invitation arrives at ~2.8 s and stays readable.
+      { at: 1.0, run: () => this.say.phone(this.app.screen) },
       { at: 1.4, run: () => sound('notify') },
+      { at: 6.4, run: () => this.say.phone(null) },
       // Eerie: the lamps stutter, the windows flare, the door eases open, the wind turns.
-      { at: 3.6, run: () => (this.env.lamps.stutter(STOP_X - 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
-      { at: 4.0, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
-      { at: 5.0, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
+      { at: 6.6, run: () => (this.env.lamps.stutter(STOP_X - 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
+      { at: 7.0, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
+      { at: 7.9, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
       // She will not go in. She turns her back on it.
-      { at: 5.8, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
-      { at: 6.9, run: () => this.beginFlee() },
+      { at: 8.6, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
+      { at: 9.7, run: () => this.beginFlee() },
     ];
   }
 
@@ -132,15 +188,19 @@ export class Approach {
     this.camera.beginHandoff(this.subject(), 0.9);
     this.say.hint(true);
     this.env.setGust(0);
-    // Behind her, unseen, the house goes back into the ground.
-    this.env.house.riseRate = 0.7;
-    this.env.house.rise = 0;
+
   }
 
   subject() {
     const v = this.visitor;
     const c = v.controller;
-    return { position: v.position, speed: c.speed, slide: c.slideBlend, eyes: v.eyesWorld(this.tmp), heading: v.heading };
+    let look: THREE.Vector3 | undefined;
+    if (this.phase === 'turn') {
+      const a = Math.min(Math.PI, this.arcA + 1.0);
+      look = this.lookTmp.set(ARC_X - ARC_R * Math.sin(a), arcH(a, ARC_R) + this.ramp.position.y + 0.9, -ARC_R * Math.cos(a));
+      if (this.arcA + 1.0 > Math.PI) look.x += (this.arcA + 1.0 - Math.PI) * 8;
+    }
+    return { position: v.position, speed: c.speed, slide: c.slideBlend, eyes: v.eyesWorld(this.tmp), heading: v.heading, look };
   }
 
   /** Returns a cinematic frame while she walks and reads; null once the player has her. */
@@ -171,32 +231,92 @@ export class Approach {
       }
       return this.director.update(t, dt);
     }
+    if (this.phase === 'turn') {
+      this.updateTurn(dt);
+      this.updateRamp(dt);
+      return null;
+    }
     // The escape: hers to run, back toward the gate — until the path turns her round.
     v.update(dt, input, this.env.pavement);
+    if (this.phase === 'loop') {
+      const since = this.time - this.loopAt;
+      // The ramp settles back; the house stands ahead of her — then sinks, and the park opens again.
+      if (since > 1.0) this.rampTarget = 0;
+      if (since > 1.8 && this.env.house.rise === 1) {
+        this.env.house.riseRate = 0.8;
+        this.env.house.rise = 0;
+      }
+      if (since > 4.2) {
+        this.say.hint(false);
+        this.env.setGust(0);
+        this.placeFinalHouse();
+        this.phase = 'off';
+        this.ramp.visible = false;
+        this.rampTarget = this.rampUp = 0;
+        this.onChase();
+      }
+      this.updateRamp(dt);
+      return null;
+    }
     if (this.phase === 'flee') {
       // Headwind and a wave through the grass, all of it toward the house.
       const k = smoothstep(0, 2.5, t - this.fleeStart());
       c.applyWind(0, 0.55 * k, 0);
       this.env.setGust(0.8 * k);
       this.env.rippleGrass(c.x - 6, k);
-      if (c.x <= TURN_X) {
-        this.phase = 'loop';
-        // The path turns under her: she is facing the other way, running on.
-        c.dir = 1;
-        c.speed = Math.max(3, c.speed * 0.6);
-        this.camera.dir = 1;
-        this.camera.shake(0.4);
-        this.bus.emit('pavement:sarcasm', { x: c.x });
-        this.loopAt = t;
+      // Ahead of her the path heaves up and curls: a banked half-ring of cobbles.
+      if (this.rampTarget === 0 && t - this.fleeStart() > 0.8) {
+        this.rampTarget = 1;
+        this.ramp.visible = true;
+        this.bus.emit('pavement:rise', {});
+        c.lane = 0;
       }
-    } else if (this.phase === 'loop' && t - this.loopAt > 1.0) {
-      this.say.hint(false);
-      this.env.setGust(0);
-      this.placeFinalHouse();
-      this.phase = 'off';
-      this.onChase();
+      if (c.x <= ARC_X) {
+        // Onto the ramp: she keeps running, and the curve carries her round.
+        this.phase = 'turn';
+        this.arcA = 0;
+        this.arcZ0 = c.z + ARC_R;
+        this.arcSpeed = Math.min(3.0, Math.max(2.4, c.speed));
+        c.controllable = false;
+      }
     }
+    this.updateRamp(dt);
     return null;
+  }
+
+  private updateRamp(dt: number): void {
+    this.rampUp = damp(this.rampUp, this.rampTarget, 2.2, dt);
+    this.ramp.position.y = (this.rampUp - 1) * 2.6;
+    if (this.rampTarget === 0 && this.rampUp < 0.01) this.ramp.visible = false;
+  }
+
+  /** Round the U: position, height and facing all follow the curve; the camera turns with her. */
+  private updateTurn(dt: number): void {
+    const v = this.visitor;
+    const c = v.controller;
+    this.arcSpeed = damp(this.arcSpeed, 2.1, 1.5, dt);
+    this.arcA = Math.min(Math.PI, this.arcA + (this.arcSpeed / ARC_R) * dt);
+    const a = this.arcA;
+    this.arcY = arcH(a, ARC_R) + this.ramp.position.y;
+    const heading = Math.atan2(-Math.cos(a), Math.sin(a));
+    // Ease in from wherever she was across the path when the curve took her.
+    const zIn = this.arcZ0 * (1 - smoothstep(0, 0.7, a));
+    v.place(ARC_X - ARC_R * Math.sin(a), -ARC_R * Math.cos(a) + zIn, heading, this.arcGround);
+    v.updateCinematic(dt, this.arcSpeed * 1.6);
+    if (a >= Math.PI) {
+      // Round: facing the house again, running on toward it.
+      this.phase = 'loop';
+      this.loopAt = this.time;
+      c.dir = 1;
+      c.mode = 'run';
+      c.lane = 2;
+      c.speed = 3.2;
+      c.controllable = true;
+      v.heading = Math.PI / 2;
+      this.camera.dir = 1;
+      this.camera.shake(0.3);
+      this.bus.emit('pavement:sarcasm', { x: c.x });
+    }
   }
 
   private loopAt = 0;
@@ -239,7 +359,7 @@ export class Approach {
       {
         // Her face, the house behind her, as she turns.
         name: 'turn',
-        start: a0 + 5.5,
+        start: a0 + 8.4,
         blend: 1.2,
         frame: (_t, o) => {
           v.eyesWorld(E);
