@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LANES, type LaneIndex, POWERS } from '../config';
+import { ahead, LANES, type LaneIndex, POWERS } from '../config';
 import { clamp, mulberry32, smoothstep } from '../core/math';
 import { leafTexture } from '../world/Textures';
 import { Obstacle, type ObstacleContext } from './Obstacle';
@@ -105,7 +105,7 @@ export class WindGust extends Obstacle {
         this.strength = 0.35 * smoothstep(0, this.windup, this.stateTime);
         if (inZone && this.stateTime > 0.4) this.strike(ctx);
         // If she somehow passes it entirely, it disperses.
-        if (v.x > this.x + ZONE / 2) this.setState('retracting');
+        if (ahead(this.x, v.x) > ZONE / 2) this.setState('retracting');
         break;
       case 'striking':
         this.strength = Math.min(1, 0.35 + this.stateTime * 3);

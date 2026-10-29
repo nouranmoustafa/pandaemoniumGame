@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LANES, type LaneIndex, POWERS } from '../config';
+import { ahead, LANES, type LaneIndex, POWERS } from '../config';
 import { clamp, easeOutBack, easeOutCubic, mulberry32, smoothstep } from '../core/math';
 import { nightEnvironment, omenFigures } from '../world/Textures';
 import { Obstacle, type ObstacleContext } from './Obstacle';
@@ -243,7 +243,7 @@ export class WaterHazard extends Obstacle {
         this.size = easeOutCubic(clamp(this.stateTime / 0.7, 0, 1));
         slick = this.stateTime > 0.5;
         this.uniforms.uRipple.value = 0.4 + 0.6 * smoothstep(0, this.windup, this.stateTime);
-        if (c.x > this.x + this.halfLength) this.setState('retracting');
+        if (ahead(this.x, c.x) > this.halfLength) this.setState('retracting');
         break;
       case 'striking':
         this.colHeight = easeOutBack(clamp(this.stateTime / 0.24, 0, 1)) * 3.3;
@@ -254,7 +254,7 @@ export class WaterHazard extends Obstacle {
       case 'holding':
         this.colHeight = 3.3 + Math.sin(this.time * 11) * 0.15;
         slick = true;
-        if (this.stateTime > 1.05 || c.x > this.x + 3) this.setState('retracting');
+        if (this.stateTime > 1.05 || ahead(this.x, c.x) > 3) this.setState('retracting');
         break;
       case 'retracting': {
         this.colHeight = Math.max(0, this.colHeight - dt * 7);
@@ -333,7 +333,7 @@ export class WaterHazard extends Obstacle {
 
     // The omen: visible only while she is far enough not to look closely.
     if (this.omenMat && this.omen) {
-      const dist = this.x - c.x;
+      const dist = ahead(c.x, this.x);
       const show = this.state === 'warning' ? smoothstep(0.3, 0.9, this.stateTime / this.windup) * smoothstep(6, 11, dist) : 0;
       const cur = this.omenMat.uniforms.uAlpha.value as number;
       this.omenMat.uniforms.uAlpha.value = cur + (show * 0.9 - cur) * Math.min(1, dt * 4);

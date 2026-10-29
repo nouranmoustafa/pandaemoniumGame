@@ -1,4 +1,4 @@
-import { COURSE } from '../config';
+import { chaseProgress } from '../config';
 import type { DemonPhase, EventBus } from '../core/Events';
 import { clamp, damp } from '../core/math';
 import type { VisitorController } from '../visitor/VisitorController';
@@ -40,7 +40,7 @@ export class DemonMind {
 
   update(dt: number, v: VisitorController, obs: VisitorObserver): void {
     if (v.mode === 'idle') return;
-    const progress = clamp(v.x / COURSE.finish, 0, 1);
+    const progress = chaseProgress(v.x);
 
     // --- Adaptive difficulty ---
     const hits = obs.recentHits(12);

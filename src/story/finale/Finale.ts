@@ -137,6 +137,8 @@ export class FinaleSequence {
   }
   /** 1v1: the Visitor won the chase and never went inside (see beginVictoryRun). */
   victory = false;
+  /** Where her friends wait on the path (world X): near the house, or — after a won chase — far down the park. */
+  friendsX = FRIENDS_X;
   wipes = 0;
   stays = 0;
   pulls = 0;
@@ -317,6 +319,7 @@ export class FinaleSequence {
     this.phase = 'off';
     this.time = 0;
     this.victory = false;
+    this.friendsX = FRIENDS_X;
     this.beat = null;
     this.cues = [];
     this.cueIndex = 0;
@@ -367,28 +370,27 @@ export class FinaleSequence {
   }
 
   /**
-   * 1v1, the Visitor wins: the house never gets her inside. Straight from the chase onto the
-   * path home, in her own clothes, with nothing left to dodge, running for her friends.
-   * The same reveal follows, then her date's last message. The caller fades around this.
+   * 1v1, the Visitor wins: the house never gets her. No cut — she runs straight on out of the
+   * chase, in her own clothes, with nothing left to dodge, and her friends are there ahead of
+   * her on the path. The same reveal follows, then her date's last message.
    */
   beginVictoryRun(): void {
+    const c = this.visitor.controller;
+    const speed = c.speed;
     this.reset();
     this.victory = true;
+    this.friendsX = c.x - 72;
     const H = this.env.house;
     H.group.position.set(COURSE.houseX, H.group.position.y, COURSE.houseZ);
-    H.rise = 1;
-    H.snapRise();
     H.glow = 0.62;
     this.outdoors = true;
     this.env.setIndoors(false);
     this.interior.visible = false;
     this.placeFriendsOnPath();
-    this.env.pavement.reset();
+    this.env.pavement.lowerInclines();
     this.env.calm = 1;
-    this.visitor.place(RUN_FROM, 0, -Math.PI / 2, this.ground);
-    this.beginRun(true);
-    // Urgent from the first frame: she is already running when the picture comes back.
-    this.visitor.controller.speed = 9;
+    this.beginRun(false);
+    c.speed = Math.max(9, speed);
   }
 
   /** The gown is on and the sheet is off the mirror: she hears laughter outside. */
@@ -428,7 +430,7 @@ export class FinaleSequence {
     this.beginRun(true);
     if (to === 'reveal') {
       const c = this.visitor.controller;
-      c.x = FRIENDS_X + STOP_AT;
+      c.x = this.friendsX + STOP_AT;
       c.z = LANES[1];
       c.lane = 1;
       c.speed = 0;
@@ -577,7 +579,7 @@ export class FinaleSequence {
 
   private placeFriendsOnPath(): void {
     for (const [id, st] of this.friends) {
-      st.pos.set(FRIENDS_X + (id === 'juno' ? 0.4 : 0), 0, PATH_Z[id]);
+      st.pos.set(this.friendsX + (id === 'juno' ? 0.4 : 0), 0, PATH_Z[id]);
       st.pos.y = this.ground.heightAt(st.pos.x, st.pos.z);
       st.heading = Math.PI / 2;
       st.frozen = false;
@@ -1550,7 +1552,7 @@ export class FinaleSequence {
         { at: 9.6, run: () => ((H.escapeOpen = 0), this.sound('latch', 0.5)) },
         { at: 10.4, run: () => ((H.glow = 0.62), V.express({ concern: 0.55, distress: 0.3 }, 1.5)) },
         { at: 11.6, run: () => (this.targetHeading = -Math.PI / 2) },
-        { at: 12.2, run: () => (V.lookAt(new THREE.Vector3(FRIENDS_X, 1.6, 0), 0.7), V.express({ concern: 0.3, smile: 0.2 }, 1.5), (this.route = 0), this.walkTo(ROUTE[0].x, ROUTE[0].z, 3.5)) },
+        { at: 12.2, run: () => (V.lookAt(new THREE.Vector3(this.friendsX, 1.6, 0), 0.7), V.express({ concern: 0.3, smile: 0.2 }, 1.5), (this.route = 0), this.walkTo(ROUTE[0].x, ROUTE[0].z, 3.5)) },
         { at: 12.8, run: () => (this.targetSpeed = 5.2) },
       ],
       [
@@ -1746,7 +1748,7 @@ export class FinaleSequence {
       this.sound('land', 0.5);
       this.s.shake(0.2);
     }
-    const d = c.x - FRIENDS_X;
+    const d = c.x - this.friendsX;
     const vEyes = v.eyesWorld(this.eyes);
     const st = (id: FriendId) => this.friends.get(id)!;
     const cor = (id: FriendId) => this.corruption.get(id)!;
@@ -1755,7 +1757,7 @@ export class FinaleSequence {
     this.hush = damp(this.hush, d < 32 ? 1 : 0, 0.8, dt);
     const tired = smoothstep(0, 6, this.time);
     v.moodOverride = d > 58 ? { smile: 0.2 + 0.25 * tired, concern: 0.35 - 0.2 * tired, determined: c.effort * 0.5, distress: 0.2 * (1 - tired) } : v.moodOverride;
-    v.gazeOverride = this.tmp2.set(FRIENDS_X, 1.6, PATH_Z.juno);
+    v.gazeOverride = this.tmp2.set(this.friendsX, 1.6, PATH_Z.juno);
     if (d < 66 && d + c.speed * dt >= 66) {
       this.sound('call');
       this.friendChar('juno').perf.play('beckon', 1);
@@ -1785,7 +1787,7 @@ export class FinaleSequence {
       const elev = lerp(0.42, 0.13, this.shadowK);
       this.env.lightOverride = {
         dir: this.tmp.set(-Math.cos(elev), Math.sin(elev), 0.12).normalize().clone(),
-        focus: new THREE.Vector3(FRIENDS_X + 6, 0, 0),
+        focus: new THREE.Vector3(this.friendsX + 6, 0, 0),
         weight: smoothstep(0, 0.3, this.shadowK),
       };
     }
@@ -2015,7 +2017,7 @@ export class FinaleSequence {
           frame: (_t, o) => {
             const p = v.position;
             o.pos.set(p.x + 2.6, p.y + 0.9, p.z + 1.9);
-            o.look.set(FRIENDS_X, 1.7, 0);
+            o.look.set(this.friendsX, 1.7, 0);
             o.fov = 36;
           },
         },
@@ -2029,7 +2031,7 @@ export class FinaleSequence {
         frame: (_t, o) => {
           const p = v.position;
           o.pos.set(p.x + 2.5, p.y + 0.95, p.z + 1.7);
-          o.look.set(FRIENDS_X, 1.65, (base('odette').z + base('wren').z) / 2);
+          o.look.set(this.friendsX, 1.65, (base('odette').z + base('wren').z) / 2);
           o.fov = 34;
         },
       },
@@ -2123,7 +2125,7 @@ export class FinaleSequence {
         frame: (_t, o) => {
           const p = v.position;
           o.pos.set(p.x + 2.2, p.y + 0.4, p.z + 1.4);
-          o.look.set(FRIENDS_X + 1, 2.4, 0);
+          o.look.set(this.friendsX + 1, 2.4, 0);
           o.fov = 44;
         },
       },

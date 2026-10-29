@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { POWERS } from '../../config';
+import { ahead, POWERS } from '../../config';
 import type { Caster, EventBus, PowerKind } from '../../core/Events';
 import { mulberry32 } from '../../core/math';
 import { FireLine } from '../../obstacles/FireLine';
@@ -151,7 +151,7 @@ export class DemonAbilitySystem {
   driveProximity(o: Obstacle, ctx: ObstacleContext): void {
     if (o.state !== 'warning' || o.selfTimed) return;
     const v = ctx.visitor.controller;
-    const eta = (o.x - v.x) / Math.max(v.speed, 1);
+    const eta = ahead(v.x, o.x) / Math.max(v.speed, 1);
     if (eta <= o.strikeLead && o.elapsed > 0.45) o.strike(ctx);
   }
 
@@ -166,7 +166,7 @@ export class DemonAbilitySystem {
     // Remove spent hazards.
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
-      if (h.state === 'spent' || h.x < ctx.visitor.controller.x - 60) {
+      if (h.state === 'spent' || ahead(h.x, ctx.visitor.controller.x) > 60) {
         h.dispose();
         this.hazards.splice(i, 1);
       }
@@ -179,7 +179,7 @@ export class DemonAbilitySystem {
   private detectDodges(ctx: ObstacleContext): void {
     const v = ctx.visitor.controller;
     for (const o of this.obstacles) {
-      if (o.passed || v.x < o.x + o.halfLength + 0.3) continue;
+      if (o.passed || ahead(o.x, v.x) < o.halfLength + 0.3) continue;
       o.passed = true;
       if (o.blocksLanes && o.dangerous && !o.landed) {
         this.dodgeStreak++;

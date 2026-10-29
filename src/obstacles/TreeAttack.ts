@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LANES, type LaneIndex } from '../config';
+import { ahead, CHASE, LANES, type LaneIndex } from '../config';
 import { clamp, easeInCubic, easeOutCubic, easeInOutSine, mulberry32, noise1, smoothstep } from '../core/math';
 import { Tendril, bezier, taperedTube } from '../world/geometry';
 import { glowTexture } from '../world/Textures';
@@ -177,7 +177,7 @@ export class TreeAttack extends Obstacle {
     this.time += dt;
     this.stateTime += dt;
     const v = ctx.visitor;
-    const dist = this.x - v.controller.x;
+    const dist = ahead(v.controller.x, this.x);
     const near = dist > -45 && dist < 110;
     this.group.visible = near;
     if (!near) return;
@@ -188,14 +188,16 @@ export class TreeAttack extends Obstacle {
     const endZ = this.style === 'sweep' ? this.farLaneZ + 1.15 : LANES[this.lanes[0]];
     const surf = pav.heightAt(this.x, endZ);
     const warnZ = this.style === 'sweep' ? (this.base.z + endZ) / 2 : endZ;
-    this.warnTip.set(this.x - 1.0, Math.max(surf + 5.2, this.base.y + 1.8), warnZ);
+    // Offsets along X lean toward the side she comes from.
+    const D = CHASE.dir;
+    this.warnTip.set(this.x - 1.0 * D, Math.max(surf + 5.2, this.base.y + 1.8), warnZ);
     this.warnCtrl.set(this.base.x + 0.2, this.base.y + 2.6, this.base.z + (warnZ - this.base.z) * 0.35);
     if (this.style === 'sweep') {
-      this.hitTip.set(this.x + 0.5, surf + 0.95, endZ);
-      this.hitCtrl.set(this.x - 0.3, Math.max(surf + 1.6, this.base.y + 0.3), (this.base.z + endZ) / 2 - 0.5);
+      this.hitTip.set(this.x + 0.5 * D, surf + 0.95, endZ);
+      this.hitCtrl.set(this.x - 0.3 * D, Math.max(surf + 1.6, this.base.y + 0.3), (this.base.z + endZ) / 2 - 0.5);
     } else {
-      this.hitTip.set(this.x + 0.2, surf + 0.12, endZ);
-      this.hitCtrl.set(this.x - 0.8, this.base.y + 0.6, (this.base.z + endZ) / 2);
+      this.hitTip.set(this.x + 0.2 * D, surf + 0.12, endZ);
+      this.hitCtrl.set(this.x - 0.8 * D, this.base.y + 0.6, (this.base.z + endZ) / 2);
     }
 
     let lean = 0;
@@ -238,7 +240,7 @@ export class TreeAttack extends Obstacle {
         lean = 0.06;
         eye = 1;
         danger = 0.8 * (1 - smoothstep(0.6, 1.2, this.stateTime));
-        if (this.stateTime > 1.3 || v.controller.x > this.x + 4) this.setState('retracting');
+        if (this.stateTime > 1.3 || ahead(this.x, v.controller.x) > 4) this.setState('retracting');
         break;
       }
       case 'retracting': {

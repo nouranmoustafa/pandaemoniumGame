@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ahead, CHASE } from '../config';
 import type { EventBus } from '../core/Events';
 import { damp } from '../core/math';
 import { SHORTCUT } from '../story/park/course';
@@ -10,9 +11,11 @@ import type { DemonMind } from './DemonMind';
 import type { Sarcasm } from './Sarcasm';
 import type { VisitorObserver } from './VisitorObserver';
 
-const BENCH_SPOTS = [30, 96, SHORTCUT.start + 5];
+/** Positions along the chase (it runs toward −X): `F` metres on from x. */
+const F = (x: number, metres: number) => x + metres * CHASE.dir;
+const BENCH_SPOTS = [F(CHASE.start, 30), F(CHASE.start, 96), F(SHORTCUT.start, 5)];
 const BENCH_PLAQUES = ['FOR THOSE WHO WAITED', 'FOR THOSE WHO WAITED. STILL.', 'YOU AGAIN.'];
-const SIGN_X = 70;
+const SIGN_X = F(CHASE.start, 70);
 
 type ShortcutState = 'waiting' | 'active' | 'done';
 
@@ -45,7 +48,7 @@ export class Tricks {
     private env: Environment,
   ) {
     this.sign = new Signpost(SIGN_X, -5.0, 'EXIT');
-    this.lure = new Signpost(SHORTCUT.start + 1, -5.0, 'EXIT', true);
+    this.lure = new Signpost(F(SHORTCUT.start, 1), -5.0, 'EXIT', true);
     this.bench = new Bench(BENCH_SPOTS[0], -5.5);
     this.bench.engrave(BENCH_PLAQUES[0]);
     this.buildArch();
@@ -68,7 +71,7 @@ export class Tricks {
     const arc = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.05, 6, 24, Math.PI), iron);
     arc.position.y = 3.1;
     this.arch.add(arc);
-    this.arch.position.set(SHORTCUT.start - 2, 0, -6.6);
+    this.arch.position.set(F(SHORTCUT.start, -2), 0, -6.6);
   }
 
   get peaceful(): boolean {
@@ -77,7 +80,7 @@ export class Tricks {
 
   reset(): void {
     this.sign.reset(SIGN_X, false);
-    this.lure.reset(SHORTCUT.start + 1, true);
+    this.lure.reset(F(SHORTCUT.start, 1), true);
     this.bench.moveTo(BENCH_SPOTS[0]);
     this.bench.encounter = 0;
     this.bench.engrave(BENCH_PLAQUES[0]);
@@ -99,7 +102,7 @@ export class Tricks {
     const vx = v.x;
 
     // --- The lying signpost ---
-    const d = this.sign.x - vx;
+    const d = ahead(vx, this.sign.x);
     if (d > 9 && d < 34 && !this.signTurnedThisPass) {
       this.sign.turnTo(true);
       this.signTurnedThisPass = true;
@@ -112,7 +115,7 @@ export class Tricks {
 
     // --- The recurring bench ---
     const b = this.bench;
-    if (vx > b.x + 11 && b.encounter < BENCH_SPOTS.length - 1) {
+    if (ahead(b.x, vx) > 11 && b.encounter < BENCH_SPOTS.length - 1) {
       b.encounter++;
       b.moveTo(BENCH_SPOTS[b.encounter]);
       b.engrave(BENCH_PLAQUES[b.encounter]);
@@ -122,14 +125,14 @@ export class Tricks {
     // --- The conferring lamps ---
     this.lightsTimer -= dt * (mind.phase === 'amused' ? 1 : 0.6);
     if (this.lightsTimer <= 0 && v.mode === 'run') {
-      const ok = this.env.lamps.confer(vx + 22, vx + 55);
+      const ok = this.env.lamps.confer(Math.min(F(vx, 22), F(vx, 55)), Math.max(F(vx, 22), F(vx, 55)));
       if (ok) this.bus.emit('trick:lights', {});
       // On success, a long pause; otherwise try again shortly further on.
       this.lightsTimer = ok ? 22 + Math.random() * 10 : 3;
     }
 
     // --- The false shortcut ---
-    if (this.shortcut === 'waiting' && vx > SHORTCUT.start - 6) {
+    if (this.shortcut === 'waiting' && ahead(SHORTCUT.start, vx) > -6) {
       this.shortcut = 'active';
       this.bus.emit('trick:shortcut', { active: true });
     }
@@ -138,13 +141,13 @@ export class Tricks {
       v.tailwind = damp(v.tailwind, 2.6, 1.5, dt);
       this.env.setPeace(1);
       // Familiar landmarks begin to repeat: the same lying sign, the same two lamps.
-      if (!this.signRepeated && vx > this.sign.x + 15 && vx > SHORTCUT.start + 6) {
+      if (!this.signRepeated && ahead(this.sign.x, vx) > 15 && ahead(SHORTCUT.start, vx) > 6) {
         this.signRepeated = true;
-        this.sign.reset(SHORTCUT.start + 30, true);
+        this.sign.reset(F(SHORTCUT.start, 30), true);
         this.signTurnedThisPass = true;
-        this.env.lamps.confer(SHORTCUT.start + 26, SHORTCUT.end + 20);
+        this.env.lamps.confer(Math.min(F(SHORTCUT.start, 26), F(SHORTCUT.end, 20)), Math.max(F(SHORTCUT.start, 26), F(SHORTCUT.end, 20)));
       }
-      if (vx > SHORTCUT.end - 4) {
+      if (ahead(SHORTCUT.end, vx) > -4) {
         this.shortcut = 'done';
         this.env.setPeace(0);
         this.env.flareHouse();
@@ -156,7 +159,8 @@ export class Tricks {
 
     // --- The sarcastic pavement ---
     this.inclineCooldown = Math.max(0, this.inclineCooldown - dt);
-    const safeStretch = vx > 36 && vx < 196 && (vx + 46 < SHORTCUT.start || vx > SHORTCUT.end);
+    const run = ahead(CHASE.start, vx);
+    const safeStretch = run > 36 && run < 196 && (ahead(vx, SHORTCUT.start) > 46 || ahead(SHORTCUT.end, vx) > 0);
     if (
       v.mode === 'run' &&
       obs.hardSprintTime > 2 &&
@@ -165,15 +169,16 @@ export class Tricks {
       safeStretch &&
       !pav.inclineActive
     ) {
-      const x0 = vx + 11;
+      // 11 m ahead of her, 34 m long (the pavement takes it from its low-X end).
+      const x0 = Math.min(F(vx, 11), F(vx, 45));
       pav.raiseIncline(x0, 34, 2.6);
-      this.inclineEnd = x0 + 34;
+      this.inclineEnd = F(vx, 45);
       this.inclinesUsed++;
       this.inclineCooldown = 40;
       this.bus.emit('pavement:sarcasm', { x: x0 });
-      sarcasm.say('effort', v, x0 + 12);
+      sarcasm.say('effort', v, F(vx, 23));
     }
-    if (this.inclineEnd > 0 && vx > this.inclineEnd) {
+    if (this.inclineEnd > 0 && ahead(this.inclineEnd, vx) > 0) {
       pav.lowerInclines();
       this.inclineEnd = -1;
     }

@@ -1,4 +1,4 @@
-import { COURSE, FAIRNESS, type LaneIndex, POWERS } from '../../config';
+import { ahead, CHASE, FAIRNESS, type LaneIndex, POWERS } from '../../config';
 import type { Caster, PowerKind } from '../../core/Events';
 import type { Obstacle } from '../../obstacles/Obstacle';
 import type { VisitorController } from '../../visitor/VisitorController';
@@ -66,7 +66,7 @@ export function checkCast(kind: PowerKind, t: CastTarget, caster: Caster, s: Fai
   if (s.time - s.lastCastTime < FAIRNESS.castSpacing) return { ok: false, reason: 'Patience.' };
   if (s.time - s.lastHitTime < FAIRNESS.graceAfterHit || v.stumbling)
     return { ok: false, reason: 'Let her stand up first. Even you have standards.' };
-  if (v.x > COURSE.finish - FAIRNESS.noCastBeforeFinish || t.x > COURSE.finish - 6)
+  if (v.dir !== CHASE.dir || ahead(v.x, CHASE.end) < FAIRNESS.noCastBeforeFinish || ahead(t.x, CHASE.end) < 6)
     return { ok: false, reason: 'The house is already opening the door.' };
   if (s.activeDynamic >= FAIRNESS.maxActive) return { ok: false, reason: 'The park can only hold so much malice at once.' };
 
@@ -75,7 +75,7 @@ export function checkCast(kind: PowerKind, t: CastTarget, caster: Caster, s: Fai
   if (lastN.length === FAIRNESS.maxRepeat && lastN.every((h) => h.kind === kind))
     return { ok: false, reason: 'The park refuses to repeat itself. Try something else.' };
 
-  const dist = t.x - v.x;
+  const dist = ahead(v.x, t.x);
   if (dist < 0) return { ok: false, reason: "She's already past that." };
   if (dist < minLead(kind, v, s.warnScale)) return { ok: false, reason: "Too close — she'd have no warning." };
   if (dist > FAIRNESS.maxRange) return { ok: false, reason: "Too far — the park can't reach that yet." };

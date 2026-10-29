@@ -43,6 +43,23 @@ export const SLIDE = {
   paddleBoost: 1.4,
 };
 
+/**
+ * The 1v1 chase runs AWAY from the house (toward −X): from where she reads the invitation, with
+ * the house at the end of the road behind her, down the park toward her friends. At `end` it is
+ * decided — she runs on to her friends, or the road turns her round and slides her to the door.
+ */
+export const CHASE = { start: 372, end: 90, dir: -1 } as const;
+
+/** Signed distance from `from` to `to` along the chase: positive when `to` is still ahead of her. */
+export function ahead(from: number, to: number): number {
+  return (to - from) * CHASE.dir;
+}
+
+/** How far along the chase x is: 0 at the start, 1 at the end. */
+export function chaseProgress(x: number): number {
+  return Math.min(1, Math.max(0, ahead(CHASE.start, x) / Math.abs(CHASE.end - CHASE.start)));
+}
+
 /** Course layout (X positions). */
 export const COURSE = {
   start: 0,

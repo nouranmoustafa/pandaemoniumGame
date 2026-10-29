@@ -1,4 +1,4 @@
-import { type LaneIndex, MODE_TUNING, POWERS } from '../config';
+import { ahead, CHASE, type LaneIndex, MODE_TUNING, POWERS } from '../config';
 import type { DemonPhase, PowerKind } from '../core/Events';
 import { POWER_ORDER } from './abilities/DemonAbilitySystem';
 import type { DemonContext, DemonDirector } from './DemonDirector';
@@ -49,7 +49,7 @@ export class AIDemonDirector implements DemonDirector {
     abilities.omenChance = mind.phase === 'desperate' ? 0.6 : 0.25;
     if (v.mode !== 'run' && v.mode !== 'slide') return;
     // Let her learn the controls before it starts paying attention.
-    if (v.x < 30) return;
+    if (ahead(CHASE.start, v.x) < 30) return;
     if (ctx.peaceful) return;
 
     this.timer -= dt;
@@ -77,7 +77,7 @@ export class AIDemonDirector implements DemonDirector {
       if (abilities.cooldownLeft(kind) > 0) continue;
       const lead = abilities.minLead(kind, oc);
       for (const extra of [1.5, 6, 12]) {
-        const x = v.x + lead + extra + (kind === 'wind' ? POWERS.wind.footprint * 0.5 : 0);
+        const x = v.x + (lead + extra + (kind === 'wind' ? POWERS.wind.footprint * 0.5 : 0)) * CHASE.dir;
         for (let lane = 0 as LaneIndex; lane <= 2; lane = (lane + 1) as LaneIndex) {
           const score = this.score(kind, lane, x, extra, ctx);
           if (score > 0.05) candidates.push({ kind, lane, x, score });

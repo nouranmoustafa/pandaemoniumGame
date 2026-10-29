@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LANES, type LaneIndex } from '../config';
+import { ahead, CHASE, LANES, type LaneIndex } from '../config';
 import { clamp, easeOutBack, easeOutCubic, mulberry32, smoothstep } from '../core/math';
 import { Tendril, bezier, bladeGeometry } from '../world/geometry';
 import { crackTexture } from '../world/Textures';
@@ -117,7 +117,7 @@ export class GrassAttack extends Obstacle {
     this.time += dt;
     this.stateTime += dt;
     const v = ctx.visitor;
-    const dist = this.x - v.controller.x;
+    const dist = ahead(v.controller.x, this.x);
     const near = dist > -40 && dist < 90;
     this.group.visible = near;
     if (!near) return;
@@ -211,12 +211,12 @@ export class GrassAttack extends Obstacle {
           tipTarget = this.ankle;
         } else {
           // Lunge toward where she would have been.
-          this.lunge.set(this.x - 1.2 + r * 0.3, base.y + 0.35, laneZ + (r - 1) * 0.35);
+          this.lunge.set(this.x - 1.2 * CHASE.dir + r * 0.3, base.y + 0.35, laneZ + (r - 1) * 0.35);
           tipTarget = this.lunge;
         }
       } else if (this.state === 'retracting') {
         reach = 1 - easeOutCubic(clamp(this.stateTime / 0.8, 0, 1));
-        this.lunge.set(base.x - 0.4, base.y + 0.4, base.z);
+        this.lunge.set(base.x - 0.4 * CHASE.dir, base.y + 0.4, base.z);
         tipTarget = this.lunge;
       }
 

@@ -1,3 +1,4 @@
+import { ahead, CHASE } from '../config';
 import type { EventBus } from '../core/Events';
 import type { VisitorController } from '../visitor/VisitorController';
 import type { Inscriptions } from '../world/Inscriptions';
@@ -55,10 +56,10 @@ export class Sarcasm {
     const text = REMARKS[id];
     const sign = this.surfaces.sign();
     const bench = this.surfaces.bench();
-    const ahead = (x: number) => x - v.x > 12 && x - v.x < 45;
-    if (id === 'difficult' && ahead(sign.x)) sign.engrave(text);
-    else if (id === 'slow' && ahead(bench.x)) bench.engrave(text);
-    else this.inscriptions.write(text, at ?? v.x + Math.max(30, v.speed * 3.6));
+    const near = (x: number) => ahead(v.x, x) > 12 && ahead(v.x, x) < 45;
+    if (id === 'difficult' && near(sign.x)) sign.engrave(text);
+    else if (id === 'slow' && near(bench.x)) bench.engrave(text);
+    else this.inscriptions.write(text, at ?? v.x + Math.max(30, v.speed * 3.6) * CHASE.dir);
     this.said.add(id);
     this.log.push(id);
     this.lastTime = this.time;

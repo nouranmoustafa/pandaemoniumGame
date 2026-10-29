@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FAIRNESS, LANES, type LaneIndex, MODE_TUNING, POWERS } from '../config';
+import { CHASE, FAIRNESS, LANES, type LaneIndex, MODE_TUNING, POWERS } from '../config';
 import type { PowerKind } from '../core/Events';
 import { type DemonAbilitySystem, POWER_ORDER } from '../demon/abilities/DemonAbilitySystem';
 import type { HumanDemonDirector } from '../demon/HumanDemonDirector';
@@ -195,9 +195,9 @@ export class DemonPanel {
 
     const k = this.selected;
     if (!k) return;
-    const near = v.x + this.abilities.minLead(k, c);
-    const far = v.x + FAIRNESS.maxRange;
-    this.overlay.showRange(this.pavement, near, far);
+    const near = v.x + this.abilities.minLead(k, c) * CHASE.dir;
+    const far = v.x + FAIRNESS.maxRange * CHASE.dir;
+    this.overlay.showRange(this.pavement, Math.min(near, far), Math.max(near, far));
 
     const p = this.pick();
     if (!p || p.lane === null) {

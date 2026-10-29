@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COURSE, MODE_TUNING } from '../../config';
+import { ahead, CHASE, COURSE, MODE_TUNING } from '../../config';
 import { CinematicDirector, type ShotFrame } from '../../camera/CinematicDirector';
 import { CAST } from '../../characters/cast';
 import { GltfAvatar } from '../../characters/gltf/GltfAvatar';
@@ -30,6 +30,10 @@ import { HANDOFF_AT, Prologue } from '../prologue/Prologue';
 import { Approach } from './Approach';
 import { CourseDirector } from './CourseDirector';
 import { PARK_COURSE } from './course';
+import { Reroute } from './Reroute';
+
+/** Where the chase is decided: she runs on to her friends, or the road turns her round. */
+const DECIDE_X = CHASE.end - 30 * CHASE.dir;
 
 export type GameMode = 'single' | 'versus';
 
@@ -85,8 +89,10 @@ export class ParkChapter implements Chapter {
   private obstacleCtx: ObstacleContext;
   private demonCtx: DemonContext;
   private arriveTime = -1;
-  /** 1v1, the Visitor won: seconds into her break for the path home (-1 = not escaping). */
-  private escapeTime = -1;
+  /** The road turning her round when the house wins the chase. */
+  readonly reroute: Reroute;
+  /** The chase has been decided (at DECIDE_X); the Demon's hand is off her. */
+  private decided = false;
   private hintTimer = 0;
   private hintShown = false;
   private tapped = false;
@@ -143,7 +149,9 @@ export class ParkChapter implements Chapter {
       prompt: (html) => s.ui.setPrompt(html),
       hint: (v) => s.ui.showHint(v),
       phone: (c) => s.ui.showPhone(c),
-    }, s.scene);
+      fade: (o, sec) => s.ui.setFade(o, sec),
+    });
+    this.reroute = new Reroute(s.scene, this.env, this.visitor, s.camera, s.bus);
     this.approach.onChase = () => this.beginChase(false);
     this.house = new HouseSequence(s.scene, this.env, this.visitor, {
       bus: s.bus,
@@ -261,25 +269,30 @@ export class ParkChapter implements Chapter {
       this.approach.begin();
       return;
     }
-    // Retry: straight into the chase, the house already gone back under.
+    // Retry: straight into the chase, where she read the invitation.
     this.approach.cancel();
-    this.approach.placeFinalHouse();
+    this.approach.placeFirstHouse();
+    this.visitor.place(CHASE.start, 0, Math.PI / 2 * CHASE.dir, this.env.pavement);
     this.beginChase(true);
   }
 
-  /** The chase proper: in her eyes, away again — for the park's exit. */
+  /** The chase proper: in her eyes, away from the house — toward her friends. */
   private beginChase(snap: boolean): void {
     const c = this.visitor.controller;
-    c.dir = 1;
+    c.dir = CHASE.dir;
     if (c.mode === 'idle') c.start();
     c.controllable = true;
+    c.speed = Math.max(c.speed, 4.5);
     this.visitor.setFirstPerson(true);
     this.s.camera.fpv = true;
-    this.s.camera.dir = 1;
+    this.s.camera.dir = CHASE.dir;
     if (snap) {
-      this.visitor.heading = Math.PI / 2;
+      this.visitor.heading = (Math.PI / 2) * CHASE.dir;
       this.s.camera.snap(this.cameraSubject());
-    }
+    } else this.s.camera.beginHandoff(this.cameraSubject(), 0.9);
+    // Behind her, the house goes back under: it will be waiting when the road brings her round.
+    this.env.house.riseRate = 0.5;
+    this.env.house.rise = 0;
     this.hintShown = true;
     this.hintTimer = 0;
     this.s.ui.showHint(true);
@@ -293,7 +306,8 @@ export class ParkChapter implements Chapter {
     this.chaseActive = false;
     this.titleFrame = null;
     this.arriveTime = -1;
-    this.escapeTime = -1;
+    this.decided = false;
+    this.reroute.reset();
     this.hintShown = false;
     this.hintTimer = 0;
     this.openingSaid = false;
@@ -485,11 +499,17 @@ export class ParkChapter implements Chapter {
     this.obstacleCtx.time = this.time;
     this.demonCtx.peaceful = this.tricks.peaceful;
 
-    this.visitor.update(dt, this.s.input, this.env.pavement);
+    if (!this.reroute.active) this.visitor.update(dt, this.s.input, this.env.pavement);
+    this.reroute.update(dt, this.s.input);
+    // Turned round, she is carried: running flat out, not hers to steer.
+    if (c.dir !== CHASE.dir) {
+      c.effort = 1;
+      c.controllable = false;
+    }
     this.observer.update(dt);
     this.mind.update(dt, c, this.observer);
-    this.course.update(this.obstacleCtx);
-    this.director.update(dt, this.demonCtx);
+    if (!this.decided || c.dir !== CHASE.dir) this.course.update(this.obstacleCtx);
+    if (!this.decided) this.director.update(dt, this.demonCtx);
     this.abilities.update(dt, this.obstacleCtx);
     this.obstacles.update(dt, this.obstacleCtx);
     this.tricks.update(dt, c, this.observer, this.mind, this.sarcasm);
@@ -509,11 +529,11 @@ export class ParkChapter implements Chapter {
     const hide = c.x > ENTRANCE.gateX + 14;
     for (const f of this.prologue.friends) f.char.object.visible = !hide;
     this.env.update(dt, this.s.camera.camera, this.visitor.position);
-    this.s.camera.update(rawDt, this.cameraSubject());
+    this.s.camera.update(rawDt, this.reroute.active ? this.reroute.subject() : this.cameraSubject());
     this.overlay.update(rawDt);
     this.panel.update(rawDt);
 
-    if (!this.openingSaid && c.x > 6 && c.mode === 'run') {
+    if (!this.openingSaid && ahead(CHASE.start, c.x) > 6 && c.mode === 'run') {
       this.openingSaid = true;
       this.s.ui.say(PARK_LINES.opening, 4.8);
     }
@@ -541,31 +561,31 @@ export class ParkChapter implements Chapter {
     });
 
     // --- Arrival at the house ---
-    // 1v1: the result is decided here, by the chase. If the Demon caught her often enough the
-    // house takes her (the full story); if not, she gets away — straight down the path home.
-    if (this.escapeTime >= 0) {
-      this.escapeTime += rawDt;
-      if (this.escapeTime > 0.75 && !this.finale.active) {
+    // --- The chase is decided ---
+    // 1v1: if the Demon caught her often enough, the road turns her round and takes her back to
+    // the door (the full story). If not, she runs straight on to her friends. Single player always
+    // belongs to the house.
+    if (!this.decided && c.dir === CHASE.dir && c.mode === 'run' && ahead(c.x, DECIDE_X) <= 0) {
+      this.decided = true;
+      this.panel.setActive(false);
+      this.s.ui.showHint(false);
+      this.hintShown = false;
+      if (this.mode === 'versus' && this.versusWinner === 'visitor') {
+        this.chaseCaught = c.caughtCount;
+        this.chaseTime = c.elapsed;
+        this.chaseWinner = 'visitor';
+        this.abilities.reset();
+        // Out of her eyes as she runs on: free, she thinks.
+        this.s.camera.fpv = false;
+        this.visitor.setFirstPerson(false);
         this.finale.beginVictoryRun();
         this.onHouseBegin();
+        return;
       }
-      return;
+      this.abilities.reset();
+      this.reroute.begin();
     }
-    if (c.mode !== 'idle' && c.mode !== 'arrive' && c.x >= COURSE.finish && this.mode === 'versus' && this.versusWinner === 'visitor') {
-      this.chaseCaught = c.caughtCount;
-      this.chaseTime = c.elapsed;
-      this.chaseWinner = 'visitor';
-      c.controllable = false;
-      this.panel.setActive(false);
-      this.s.camera.fpv = false;
-      this.visitor.setFirstPerson(false);
-      this.s.ui.showHint(false);
-      this.s.camera.shake(0.3);
-      this.s.ui.setFade(1, 0.6);
-      this.escapeTime = 0;
-      return;
-    }
-    if (c.mode !== 'idle' && c.mode !== 'arrive' && c.x >= COURSE.finish) {
+    if (c.mode !== 'idle' && c.mode !== 'arrive' && c.dir === 1 && c.x >= COURSE.finish) {
       c.mode = 'arrive';
       c.controllable = false;
       this.arriveTime = 0;

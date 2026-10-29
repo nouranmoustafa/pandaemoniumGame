@@ -1,4 +1,4 @@
-import { LANES, type LaneIndex, RUN } from '../config';
+import { ahead, LANES, type LaneIndex, RUN } from '../config';
 import type { EventBus } from '../core/Events';
 import type { Obstacle } from '../obstacles/Obstacle';
 import type { VisitorController } from '../visitor/VisitorController';
@@ -135,7 +135,7 @@ export class VisitorObserver {
     const v = this.visitor();
     const lane = v.lane;
     const threatIn = (l: number) =>
-      this.obstacles().some((o) => o.threatening && o.blocksLanes && o.lanes.includes(l as LaneIndex) && o.x > v.x + 2 && o.x < x + 4);
+      this.obstacles().some((o) => o.threatening && o.blocksLanes && o.lanes.includes(l as LaneIndex) && ahead(v.x, o.x) > 2 && ahead(o.x, x) > -4);
     if (!threatIn(lane)) return lane;
     const options = [lane - 1, lane + 1].filter((l) => l >= 0 && l <= 2 && !threatIn(l));
     if (!options.length) return lane;

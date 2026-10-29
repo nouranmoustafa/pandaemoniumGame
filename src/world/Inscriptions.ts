@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ahead, CHASE } from '../config';
 import type { Pavement } from './Pavement';
 
 export type InscriptionStyle = 'ember' | 'brass';
@@ -99,7 +100,7 @@ export class Inscriptions {
     face.position.set(0, 0.5, 0.112);
     root.add(face);
     // Turned toward the approaching camera so it reads as she nears it.
-    root.rotation.set(-0.06, -0.5, 0.03);
+    root.rotation.set(-0.06, -0.5 * CHASE.dir, 0.03);
     root.position.set(x, -1.2, z);
     this.group.add(root);
     this.items.push({ root, mat, x, z, age: 0, fade: -1 });
@@ -113,7 +114,7 @@ export class Inscriptions {
       // Rises first, then the words burn in.
       const rise = Math.min(1, it.age / 0.8);
       it.mat.uniforms.uReveal.value = Math.min(1.05, Math.max(0, it.age - 0.5) / 1.5);
-      if (it.fade < 0 && visitorX > it.x + 5) it.fade = 0;
+      if (it.fade < 0 && ahead(it.x, visitorX) > 5) it.fade = 0;
       let sink = 0;
       if (it.fade >= 0) {
         it.fade += dt;
