@@ -231,12 +231,24 @@ export class House {
         const pivot = new THREE.Group();
         pivot.position.set(side * E.width / 2, 0, 0.04);
         g.add(pivot);
-        const leaf = new THREE.Mesh(new THREE.BoxGeometry(E.width / 2, E.height, 0.06), new THREE.MeshStandardMaterial({ color: 0x2a1a20, roughness: 0.4, transparent: true, opacity: 0.35, fog: false }));
-        leaf.position.set((-side * E.width) / 4, E.height / 2, 0);
-        pivot.add(leaf);
-        const bars = new THREE.Mesh(new THREE.BoxGeometry(E.width / 2, 0.06, 0.08), trim);
-        bars.position.set((-side * E.width) / 4, E.height * 0.68, 0);
-        pivot.add(bars);
+        const w = E.width / 2;
+        const cx = (-side * w) / 2;
+        const frameGeo = mergeFrame([
+          new THREE.BoxGeometry(0.09, E.height, 0.09).translate(cx - w / 2 + 0.045, E.height / 2, 0),
+          new THREE.BoxGeometry(0.09, E.height, 0.09).translate(cx + w / 2 - 0.045, E.height / 2, 0),
+          new THREE.BoxGeometry(w, 0.1, 0.09).translate(cx, 0.05, 0),
+          new THREE.BoxGeometry(w, 0.1, 0.09).translate(cx, E.height - 0.05, 0),
+          new THREE.BoxGeometry(w, 0.06, 0.07).translate(cx, E.height * 0.68, 0),
+          new THREE.BoxGeometry(0.05, E.height, 0.07).translate(cx, E.height / 2, 0),
+        ]);
+        pivot.add(new THREE.Mesh(frameGeo, trim));
+        // Old glass: dark, catching a little of the warm room behind it.
+        const pane = new THREE.Mesh(
+          new THREE.PlaneGeometry(w - 0.12, E.height - 0.14),
+          new THREE.MeshStandardMaterial({ color: 0x1a1216, emissive: 0x3a2010, roughness: 0.08, metalness: 0.6, transparent: true, opacity: 0.55, fog: false, side: THREE.DoubleSide }),
+        );
+        pane.position.set(cx, E.height / 2, 0);
+        pivot.add(pane);
         this.escapeLeaves.push(pivot);
       }
     }

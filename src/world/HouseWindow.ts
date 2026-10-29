@@ -126,7 +126,7 @@ export class HouseWindow {
     // --- Vines asleep in the frame ---
     const vm = vineMaterial();
     for (let k = 0; k < 5; k++) {
-      const v = new Vine(vm, k < 2 ? 0.04 : 0.03, 40, 7, 10);
+      const v = new Vine(vm, k < 2 ? 0.055 : 0.045, 40, 7, 8);
       g.add(v.mesh);
       this.vines.push(v);
     }

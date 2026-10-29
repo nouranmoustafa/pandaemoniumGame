@@ -133,5 +133,6 @@ export class Vine {
 
 /** The house's vine material: near-black bark-green with a wet sheen. */
 export function vineMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: 0x34422a, roughness: 0.45, metalness: 0.05, emissive: 0x0b1207 });
+  // A little emissive green so it reads against dark wood and night.
+  return new THREE.MeshStandardMaterial({ color: 0x3e5230, roughness: 0.38, metalness: 0.05, emissive: 0x16240c });
 }

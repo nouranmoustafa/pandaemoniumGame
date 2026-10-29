@@ -106,6 +106,17 @@ export class Game {
     this.chapter.house.prewarm(this.renderer, this.scene, this.camera.camera);
     this.chapter.finale.prewarm(this.renderer, this.scene, this.camera.camera);
     this.renderer.setRenderTarget(null);
+    // Upload every texture now. Three uploads a texture the first time something using it is
+    // drawn, so whole parts of the park (unseen since the gate) used to upload together on the
+    // first frame back outside after the window — a multi-second stall.
+    const seen = new Set<THREE.Texture>();
+    this.scene.traverse((o) => {
+      const mats = (o as THREE.Mesh).material;
+      if (!mats) return;
+      for (const m of Array.isArray(mats) ? mats : [mats])
+        for (const v of Object.values(m)) if ((v as THREE.Texture)?.isTexture && !seen.has(v as THREE.Texture)) seen.add(v as THREE.Texture);
+    });
+    for (const t of seen) this.renderer.initTexture(t);
 
     this.bus.on('visitor:caught', () => {
       this.post.pulseHurt();

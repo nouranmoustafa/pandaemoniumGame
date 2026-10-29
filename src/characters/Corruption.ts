@@ -202,6 +202,8 @@ function secondFaceTexture(): THREE.CanvasTexture {
  */
 export class Corruption {
   readonly p: CorruptionParams = { ...ZERO };
+  /** Leave the right hand's fingers their own length (it is holding the phone). */
+  keepRightHand = false;
   private basePos = new Map<BoneName, THREE.Vector3>();
   private touched: BoneName[] = ['head', 'neck', 'hips', 'spine', 'chest', 'shoulderL', 'shoulderR', 'elbowL', 'elbowR', 'wristL', 'wristR', 'thighL', 'thighR', 'kneeL', 'kneeR', 'ankleL', 'ankleR'];
   private fingerBones: BoneName[] = [];
@@ -324,6 +326,7 @@ export class Corruption {
   /** Everything back as it was: bones, scales, materials, added parts hidden. */
   reset(): void {
     Object.assign(this.p, ZERO);
+    this.keepRightHand = false;
     const rig = this.char.rig;
     for (const [n, pos] of this.basePos) {
       const b = rig.bone(n);
@@ -369,8 +372,10 @@ export class Corruption {
       bone(`shoulder${s}`).scale.set(armThin, armLen, armThin);
       bone(`wrist${s}`).scale.set(1, 1 / armLen, 1);
     }
-    const fingerLen = 1 + p.fingers * 1.9;
-    for (const n of this.fingerBones) bone(n).scale.set(1 - p.fingers * 0.3, fingerLen, 1 - p.fingers * 0.3);
+    for (const n of this.fingerBones) {
+      const k = this.keepRightHand && n.endsWith('R') ? 0 : p.fingers;
+      bone(n).scale.set(1 - k * 0.3, 1 + k * 1.9, 1 - k * 0.3);
+    }
     const legLen = 1 + p.legs * 0.3;
     for (const s of SIDES) {
       bone(`thigh${s}`).scale.set(1 - p.legs * 0.18, legLen, 1 - p.legs * 0.18);

@@ -219,6 +219,22 @@ export class FinaleSequence {
     this.house.dress.reveal = 0.5;
     this.house.dress.veil.begin(0);
     renderer.render(scene, camera);
+    // And real frames from where Stage 5's outdoor cameras stand (the landing, the run, the
+    // closing shot): whatever those views draw for the first time is compiled now, not mid-story.
+    const cam = (camera as THREE.PerspectiveCamera).clone();
+    const views: Array<[THREE.Vector3, THREE.Vector3]> = [
+      [new THREE.Vector3(LAND.x - 2.4, 0.5, LAND.z + 1.8), new THREE.Vector3(LAND.x, 1.6, LAND.z - 1)],
+      [new THREE.Vector3(LAND.x - 7, 1.5, LAND.z + 6.5), new THREE.Vector3(COURSE.houseX - 2, 5.5, COURSE.houseZ + 4)],
+      [new THREE.Vector3(RUN_FROM + 6.8, 4, 6.6), new THREE.Vector3(RUN_FROM - 8, 1, 0)],
+      [new THREE.Vector3(FRIENDS_X + 12, 1, 1.7), new THREE.Vector3(FRIENDS_X, 1.6, 0)],
+      [new THREE.Vector3(COURSE.houseX - 64, 1.7, 5.5), new THREE.Vector3(COURSE.houseX - 4, 11.5, COURSE.houseZ - 1)],
+    ];
+    for (const [p, l] of views) {
+      cam.position.copy(p);
+      cam.lookAt(l);
+      cam.updateMatrixWorld();
+      renderer.render(scene, cam);
+    }
     this.house.dress.reset();
     for (const c of this.corruption.values()) c.reset();
     for (const v of vines) {
@@ -575,6 +591,7 @@ export class FinaleSequence {
    */
   private drawFaces(urgent: boolean, delay: number, duration = urgent ? 3.4 : 5.6): void {
     const fog = this.win.fog;
+    for (const st of this.friends.values()) st.frozen = true;
     const eye = ALIGN_EYE;
     const lines: Array<{ pts: Array<[number, number]>; w: number; len: number }> = [];
     const order: FriendId[] = urgent ? ['wren', 'odette', 'juno'] : ['odette', 'juno', 'wren'];
@@ -625,23 +642,23 @@ export class FinaleSequence {
           }
         } else if (id === 'juno') {
           // A face pulled long; four eyes; a lipless smile of teeth.
-          line(arc(0, -0.12, 0.12 + j, 0.36, 0, Math.PI * 2, 26, 0.05));
+          line(arc(0, -0.19, 0.12 + j, 0.36, 0, Math.PI * 2, 26, 0.05));
           for (const [x, y] of [
-            [-0.045, 0.0],
-            [0.045, 0.0],
-            [-0.05, 0.1],
-            [0.05, 0.1],
+            [-0.045, -0.07],
+            [0.045, -0.07],
+            [-0.05, 0.03],
+            [0.05, 0.03],
           ] as const)
             line(arc(x, y, 0.022, 0.016, 0, Math.PI * 2, 10), 0.012);
           line([
-            [-0.08, -0.26],
-            [0.08, -0.26],
+            [-0.08, -0.33],
+            [0.08, -0.33],
           ]);
           for (let i = 0; i < 7; i++)
             line(
               [
-                [-0.07 + i * 0.023, -0.23],
-                [-0.07 + i * 0.023, -0.29],
+                [-0.07 + i * 0.023, -0.3],
+                [-0.07 + i * 0.023, -0.36],
               ],
               0.009,
             );
@@ -744,7 +761,7 @@ export class FinaleSequence {
       { at: 5.6, run: () => (this.targetHeading = Math.PI) },
       { at: 6.0, run: () => V.play('palmsGlass', 1, 600) },
       { at: 7.2, run: () => (V.stop('palmsGlass'), V.play('knock', -1)) },
-      { at: 8.0, run: () => (this.sound('frame'), (this.win.stir = 0.35), this.setBeat('WINDOW_CONDENSATION')) },
+      { at: 8.0, run: () => (this.sound('frame'), (this.win.stir = 0.35), this.holdFriends(), this.setBeat('WINDOW_CONDENSATION')) },
       { at: 8.4, run: () => V.play('palmsGlass', 1, 600) },
       { at: 8.6, run: () => this.sound('frost') },
       { at: 10.0, run: () => (V.lookAt(glassMid, 0.9), V.express({ concern: 0.7, surprise: 0.2 }, 3), this.walkTo(STAND.x, STAND.z - 0.1, 0.25, Math.PI)) },
@@ -909,6 +926,7 @@ export class FinaleSequence {
   /** Clear. Just her friends, waving, by the lamp. Then it comes back. */
   private glassCleared(): void {
     const fog = this.win.fog;
+    for (const st of this.friends.values()) st.frozen = false;
     const V = this.perf;
     this.enter(
       'return',
@@ -917,6 +935,7 @@ export class FinaleSequence {
         { at: 0.5, run: () => (this.walkTo(STAND.x - 0.05, STAND.z + 0.12, 0.8, Math.PI), V.express({ smile: 0.5, concern: 0.15 }, 2.4), (V.nervous = 0)) },
         { at: 1.4, run: () => (this.friendChar('juno').perf.play('wave'), this.sound('laughFar', 0.5)) },
         { at: 3.4, run: () => (this.setBeat('WINDOW_WARNING_RETURN'), this.sound('frame'), this.sound('frost'), (this.win.stir = 0.75)) },
+        { at: 4.1, run: () => this.holdFriends() },
         { at: 3.6, run: () => this.sound('scrape') },
         { at: 4.6, run: () => (this.drawFaces(true, 0), this.sound('scrape')) },
         { at: 5.6, run: () => (this.sound('scrape'), V.express({ fear: 0.4, determined: 0.5, distress: 0.5, concern: 0.4 }, 3)) },
@@ -960,6 +979,7 @@ export class FinaleSequence {
   // -------------------------------------------------------------- choice
 
   private beginChoice(): void {
+    for (const st of this.friends.values()) st.frozen = false;
     this.enter('choice', [], [
       {
         // Her, small against the tall window, the marks still on the glass.
@@ -1176,6 +1196,21 @@ export class FinaleSequence {
     }
   }
 
+  /**
+   * The friends stand still and watch the window while the finger draws over them, so the
+   * drawing (projected from where they stand) stays on their faces.
+   */
+  private holdFriends(): void {
+    for (const st of this.friends.values()) {
+      st.waving = false;
+      const p = this.friendChar(st.id).perf;
+      p.stop('wave');
+      p.stop('laugh');
+      p.autoFidget = false;
+      p.lookAt(this.interior.toWorld(WINDOW.x, 1.8, -4.2), 0.8);
+    }
+  }
+
   private friendsStep(dist: number, seconds: number): void {
     for (const st of this.friends.values()) {
       st.speed = dist / seconds;
@@ -1319,7 +1354,7 @@ export class FinaleSequence {
     this.s.prompt(this.sinceTap > 4 && this.struggle < 1 ? 'TAP SPACE — <span>PULL FREE</span>' : this.pulls > 0 && this.sinceTap < 4 ? null : 'TAP SPACE — <span>PULL FREE</span>');
     // On the sill, leaning further out with each pull.
     const p = this.interior.toWorld(WINDOW.x - 0.05, 0, this.win.glassZ - 0.08 - STRUGGLE.lean * 0.18, this.tmp);
-    this.lift = WINDOW.sill;
+    this.lift = WINDOW.sill + 0.1;
     this.heading = Math.PI;
     this.visitor.place(p.x, p.z, Math.PI, this.floor);
     this.visitor.updateCinematic(dt, 0);
@@ -1884,6 +1919,7 @@ export class FinaleSequence {
           app.update(APP_BEATS.end);
           odette.char.setPhoneScreen(app.material);
           odette.char.phone.visible = true;
+          this.corruption.get('odette')!.keepRightHand = true;
           // Undo the arm's thinning on the prop.
           odette.char.phone.scale.set(1 / 0.58, 1, 1 / 0.58);
           this.sound('call', 0.25);
@@ -2165,8 +2201,9 @@ export class FinaleSequence {
       name: 'house-alone',
       start: 0,
       blend: 0,
-      frame: (_t, o) => {
-        o.pos.set(COURSE.houseX - 64, 1.7, 5.5);
+      frame: (t, o) => {
+        const k = smoothstep(0, 16, t);
+        o.pos.set(COURSE.houseX - 64 + k * 11, 1.7 - k * 0.4, 5.5 - k * 0.8);
         o.look.set(COURSE.houseX - 4, 11.5, COURSE.houseZ - 1);
         o.fov = 40;
       },
@@ -2211,7 +2248,7 @@ export class FinaleSequence {
     if (this.climb >= 0 && this.phase === 'escape') {
       this.climb = Math.min(1, this.climb + dt / 1.4);
       const k = smoothstep(0, 1, this.climb);
-      this.lift = WINDOW.sill * k;
+      this.lift = (WINDOW.sill + 0.1) * k;
       const p = this.interior.toWorld(WINDOW.x - 0.05, 0, lerp(STAND.z, this.win.glassZ - 0.08, k), this.tmp);
       this.aim = null;
       this.targetSpeed = 0;
