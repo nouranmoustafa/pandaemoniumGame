@@ -31,6 +31,10 @@ const DRESS_END = 15.6;
  * waiting); her walking speeds are raised to match, so she still reaches each mark.
  */
 const CLOCK = { threshold: 1.35, interior: 1.45, dress: 1.4 } as const;
+/** The wake at the door: every pull back brings up one more vine, until there are this many. */
+const GRIP_MAX = 6;
+/** Seconds (house clock) from the first pull until the house simply takes her, however hard she fights. */
+const WAKE_PULL_LIMIT = 5.6;
 
 export interface HouseServices {
   bus: EventBus;
@@ -101,6 +105,14 @@ export class HouseSequence {
   private transition = -1;
   /** She came to on the ground (a Demon win): dragged, not walked, to the door. */
   private waking = false;
+  /** The Demon-win capture at the door (see startWake). */
+  private wakeMode = false;
+  /** Extra vines out of the grass, one per pull back; where each rose and when. */
+  private grip = 0;
+  private gripVines: Vine[] = [];
+  private gripAt: number[] = [];
+  private gripRoot: THREE.Vector3[] = [];
+  private pullSince = -1;
   private speed = 0;
   private targetSpeed = 0;
   private heading = Math.PI / 2;
@@ -134,6 +146,13 @@ export class HouseSequence {
       const v = new Vine(vm, k === 2 ? 0.06 : 0.045, 48, 7, 7);
       scene.add(v.mesh);
       this.captureVines.push(v);
+    }
+    for (let k = 0; k < GRIP_MAX; k++) {
+      const v = new Vine(vm, 0.04 + (k % 3) * 0.008, 32, 6, 8);
+      scene.add(v.mesh);
+      this.gripVines.push(v);
+      this.gripAt.push(-1);
+      this.gripRoot.push(new THREE.Vector3());
     }
     for (let k = 0; k < 5; k++) {
       const v = new Vine(vm, 0.045 + (k % 2) * 0.015, 32, 7, 6);
@@ -224,6 +243,14 @@ export class HouseSequence {
     this.resists = 0;
     this.transition = -1;
     this.waking = false;
+    this.wakeMode = false;
+    this.grip = 0;
+    this.pullSince = -1;
+    for (let k = 0; k < GRIP_MAX; k++) {
+      this.gripAt[k] = -1;
+      this.gripVines[k].extent = 0;
+      this.gripVines[k].update(0);
+    }
     this.complete = false;
     this.pulling = false;
     this.spiral = 0;
@@ -318,6 +345,7 @@ export class HouseSequence {
     else if (this.phase === 'dress') this.updateDress(dt);
     else if (this.phase === 'done' && this.interior.visible) this.drive(dt, this.floor);
     this.updateRibbons();
+    this.updateGrip();
     this.interior.update(dt);
     this.dress.update(dt);
     return this.director.update(t, dt);
@@ -327,10 +355,90 @@ export class HouseSequence {
   private resist(): void {
     if (!this.pulling || !this.s.input.consume('sprint')) return;
     this.resists++;
+    if (this.wakeMode) {
+      this.resistWake();
+      return;
+    }
     this.speed = 0;
     this.perf.play('resist');
     this.s.shake(0.12);
     this.sound('snap');
+  }
+
+  /**
+   * Awake and fighting: she heaves back, and the ground answers with another vine. Each one
+   * makes the next heave weaker and the drag stronger, until she cannot pull back at all.
+   */
+  private resistWake(): void {
+    if (this.grip >= GRIP_MAX) {
+      this.s.shake(0.04);
+      return;
+    }
+    this.speed = -2.4 * (1 - this.grip / GRIP_MAX);
+    this.perf.play('resist');
+    this.s.shake(0.14);
+    this.sound('snap');
+    this.addGrip();
+  }
+
+  /** One more vine bursts out of the grass by the porch and takes hold of her. */
+  private addGrip(): void {
+    if (this.grip >= GRIP_MAX) return;
+    const k = this.grip++;
+    const side = k % 2 === 0 ? 1 : -1;
+    const x = DOOR.x - 1.6 - (k % 3) * 0.55;
+    const z = DOOR.z + side * (0.7 + 0.25 * k);
+    this.gripRoot[k].set(x, this.porch.heightAt(x, z) + 0.02, z);
+    this.gripAt[k] = this.time;
+    this.targetSpeed = 2.6 + this.grip * 0.7;
+    this.sound('silk');
+    this.env.rippleGrass(this.visitor.position.x + 1, 1);
+    if (this.grip >= GRIP_MAX) {
+      this.s.prompt(null);
+      this.perf.express({ fear: 1, distress: 0.9 }, 4);
+    }
+  }
+
+  /** The extra vines: root, snaking then taut, to a coil round an ankle, the waist or a wrist. */
+  private updateGrip(): void {
+    const t = this.time;
+    for (let k = 0; k < GRIP_MAX; k++) {
+      const vine = this.gripVines[k];
+      if (this.gripAt[k] < 0 || this.phase !== 'threshold') {
+        vine.extent = 0;
+        vine.update(t);
+        continue;
+      }
+      const u = clamp((t - this.gripAt[k]) / 0.45, 0, 1);
+      const root = this.gripRoot[k];
+      const end = this.tmp;
+      const target = k % 3;
+      if (target === 0) this.visitor.getAnkle(k % 2 === 0 ? 'L' : 'R', end);
+      else if (target === 1) this.bone('hips', end);
+      else this.bone(k % 2 === 0 ? 'wristL' : 'wristR', end);
+      const pts = this.pts;
+      const n = 7;
+      const dx = end.x - root.x;
+      const dz = end.z - root.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const px = -dz / len;
+      const pz = dx / len;
+      const slack = 1 - u;
+      for (let j = 0; j < n; j++) {
+        const f = j / (n - 1);
+        const env = Math.sin(f * Math.PI);
+        const snake = Math.sin(f * 8 - t * 6 + k * 1.3) * 0.3 * slack * env + Math.sin(t * 2 + k) * 0.03 * env;
+        pts[j].set(lerp(root.x, end.x, f) + px * snake, lerp(root.y, end.y, f) + env * (0.25 * slack + 0.05), lerp(root.z, end.z, f) + pz * snake);
+      }
+      const R = target === 1 ? 0.2 : 0.06;
+      for (let j = 0; j < 4; j++) {
+        const a = (j / 4) * Math.PI * 2 + k;
+        pts[n + j].set(end.x + px * Math.cos(a) * R, end.y + Math.sin(a) * R * 0.6, end.z + pz * Math.cos(a) * R + Math.sin(a) * R * 0.5);
+      }
+      vine.setPath(pts.slice(0, n + 4));
+      vine.extent = 1 - (1 - u) * (1 - u);
+      vine.update(t);
+    }
   }
 
   /** Walk (or be walked) toward `aim` at the current speed; turn toward the target heading. */
@@ -358,6 +466,12 @@ export class HouseSequence {
     const t = this.time;
     this.env.house.doorOpen = damp(this.env.house.doorOpen, t > 0.2 ? 1 : 0, 1.8, dt);
     this.resist();
+    // However hard she fights, the house has her within a few seconds: the rest of the vines come.
+    if (this.wakeMode && this.pullSince >= 0) {
+      this.pullSince += dt * CLOCK.threshold;
+      const due = Math.floor((this.pullSince / WAKE_PULL_LIMIT) * GRIP_MAX);
+      while (this.grip < Math.min(GRIP_MAX, due)) this.addGrip();
+    }
     this.drive(dt, this.porch);
     // She crosses the threshold into the light; the door takes her.
     const c = this.visitor.controller;
@@ -543,7 +657,8 @@ export class HouseSequence {
   startWake(): void {
     this.start({ pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 40 });
     this.waking = true;
-    const at = new THREE.Vector3(DOOR.x - 11, 0, DOOR.z + 0.3);
+    this.wakeMode = true;
+    const at = new THREE.Vector3(DOOR.x - 7.5, 0, DOOR.z + 0.3);
     this.heading = this.targetHeading = -Math.PI / 2;
     this.speed = this.targetSpeed = 0;
     this.visitor.place(at.x, at.z, this.heading, this.porch);
@@ -556,35 +671,46 @@ export class HouseSequence {
     shots[0].frame(0, f0);
     this.director.setShots(shots);
     this.director.startFrom(f0.pos, f0.look, f0.fov);
-    // Her eyes opening: half, shut again, then open.
-    this.s.fade(0.45, 0.9);
+    // Her eyes opening: half, shut, open.
+    this.s.fade(0.45, 0.5);
   }
 
   private wakeCues(): Cue[] {
     const V = this.perf;
     const doorAt = new THREE.Vector3(DOOR.x, DOOR.y + 1.8, DOOR.z);
     return [
-      { at: 0.75, run: () => this.s.fade(0.9, 0.3) },
-      { at: 1.05, run: () => this.s.fade(0.2, 0.7) },
-      { at: 1.8, run: () => this.s.fade(0.55, 0.25) },
-      { at: 2.05, run: () => this.s.fade(0, 0.8) },
-      { at: 0.4, run: () => this.sound('creak') },
-      // She comes to; the house is right behind her, its door open.
-      { at: 2.3, run: () => (V.express({ fear: 0.45, surprise: 0.4, distress: 0.4 }, 4), V.lookAt(doorAt, 0.8)) },
-      { at: 3.0, run: () => ((this.reachAt[0] = 3.0), this.sound('silk'), this.env.rippleGrass(DOOR.x - 6, 1)) },
-      { at: 3.4, run: () => ((this.reachAt[1] = 3.4), this.sound('silk')) },
-      { at: 3.8, run: () => ((this.reachAt[2] = 3.8), V.play('flinch'), V.express({ fear: 0.8, distress: 0.6 }, 6), (V.nervous = 0.7), this.s.shake(0.2)) },
+      // (House clock: 1.35 x real time.)
+      { at: 0.5, run: () => this.s.fade(0.9, 0.15) },
+      { at: 0.75, run: () => this.s.fade(0, 0.45) },
+      { at: 0.2, run: () => this.sound('creak') },
+      // She comes to; the house is right there, its door open, and the grass is already moving.
+      { at: 0.9, run: () => (V.express({ fear: 0.7, surprise: 0.6, distress: 0.4 }, 4), V.lookAt(doorAt, 0.9), this.env.rippleGrass(DOOR.x - 5, 1)) },
+      { at: 1.2, run: () => ((this.reachAt[0] = 1.2), this.sound('silk')) },
+      { at: 1.35, run: () => ((this.reachAt[1] = 1.35), this.sound('silk')) },
+      // Seized: she scrambles up and digs her heels in.
       {
-        at: 4.6,
+        at: 1.5,
+        run: () => {
+          this.reachAt[2] = 1.5;
+          V.stop('fallen');
+          V.play('pulled', -1, 600);
+          V.express({ fear: 0.85, distress: 0.6, determined: 0.5 }, 6);
+          V.nervous = 0.7;
+          this.waking = false;
+          this.targetHeading = null;
+          this.s.shake(0.25);
+        },
+      },
+      {
+        at: 1.9,
         run: () => {
           this.pulling = true;
+          this.pullSince = 0;
           this.aim = new THREE.Vector3(DOOR.x - 0.2, 0, DOOR.z);
-          this.targetSpeed = 2.0;
-          this.s.shake(0.25);
+          this.targetSpeed = 2.6;
           this.s.prompt('TAP SPACE — <span>PULL BACK</span>');
         },
       },
-      { at: 6.2, run: () => (V.lookAt(this.tmp.set(this.visitor.position.x - 20, 1.2, this.visitor.position.z).clone(), 1), (this.targetSpeed = 2.4)) },
     ];
   }
 
@@ -608,7 +734,7 @@ export class HouseSequence {
       {
         // Wide, from the side: the grass rising for her, the open door.
         name: 'seized',
-        start: 2.9,
+        start: 1.1,
         blend: 1.2,
         frame: (_t, o) => {
           const p = v.position;
@@ -620,7 +746,7 @@ export class HouseSequence {
       {
         // Tracking alongside as she is dragged to the threshold.
         name: 'drag',
-        start: 4.8,
+        start: 2.4,
         blend: 1.6,
         frame: (_t, o) => {
           const p = v.position;

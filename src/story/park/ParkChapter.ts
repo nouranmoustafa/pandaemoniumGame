@@ -653,10 +653,10 @@ export class ParkChapter implements Chapter {
     this.env.house.snapRise();
     c.dir = 1;
     c.mode = 'run';
-    c.x = COURSE.hillCrest + 45;
+    c.x = COURSE.hillCrest + 95;
     c.z = 0;
     c.lane = 1;
-    c.speed = 13;
+    c.speed = 20;
     c.controllable = false;
     c.startSlide();
     this.visitor.heading = Math.PI / 2;
