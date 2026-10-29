@@ -9,6 +9,7 @@ import { ShadowTwin } from '../../characters/ShadowTwin';
 import type { EventBus } from '../../core/Events';
 import { clamp, damp, lerp, smoothstep } from '../../core/math';
 import { APP_BEATS, DatingApp } from '../../ui/DatingApp';
+import { TOUCH } from '../../ui/touch';
 import type { Visitor } from '../../visitor/Visitor';
 import type { Environment } from '../../world/Environment';
 import { ENTRANCE } from '../../world/ParkEntrance';
@@ -26,6 +27,8 @@ export const BEATS: Array<{ id: PrologueBeat; at: number }> = [
 export const HANDOFF_AT = 30.0;
 /** When the app starts on her phone. */
 const APP_AT = 17.0;
+/** When she puts the phone away (the goodbye). */
+const PHONE_AWAY = 25.0;
 
 interface Friend {
   id: CharacterId;
@@ -77,6 +80,9 @@ export class Prologue {
   beat: PrologueBeat | null = null;
   onBeat: (b: PrologueBeat) => void = () => {};
   onHandoff: () => void = () => {};
+  /** Phones only: show (or hide, with null) the app's screen as an overlay. */
+  onPhone: (screen: HTMLCanvasElement | null) => void = () => {};
+  private phoneShown = false;
   private cues: Cue[] = [];
   private cueIndex = 0;
   private titleTime = 0;
@@ -170,9 +176,16 @@ export class Prologue {
 
   /** The chase owns her now; the friends stay behind, out of sight. */
   release(): void {
+    this.showPhone(false);
     this.active = false;
     this.complete = true;
     this.twin.setActive(false);
+  }
+
+  private showPhone(show: boolean): void {
+    if (show === this.phoneShown) return;
+    this.phoneShown = show;
+    this.onPhone(show ? this.app.screen : null);
   }
 
   private setBeat(b: PrologueBeat): void {
@@ -205,9 +218,11 @@ export class Prologue {
   update(dt: number): ShotFrame {
     // Stage 6 pacing: every beat is kept, with less waiting between them. The app's messages
     // keep the gentler rate so they stay readable.
+    // Phones: the app plays at its own pace, and its screen is shown big (the 3D phone is too small).
     const appWindow = this.time >= 15 && this.time < APP_AT + APP_BEATS.end + 1;
-    this.time += dt * (appWindow ? 1.7 : this.time < 31 ? 2.0 : 1.45);
+    this.time += dt * (appWindow ? (TOUCH ? 1 : 1.7) : this.time < 31 ? 2.0 : 1.45);
     const t = this.time;
+    if (TOUCH) this.showPhone(t >= APP_AT && t < PHONE_AWAY);
     for (let i = BEATS.length - 1; i >= 0; i--) {
       if (t >= BEATS[i].at) {
         this.setBeat(BEATS[i].id);

@@ -167,6 +167,7 @@ export class ParkChapter implements Chapter {
     this.panel = new DemonPanel(s.canvas, s.camera.camera, this.abilities, this.human, this.overlay, this.env.pavement, () => this.obstacleCtx);
     this.prologue = new Prologue(s.scene, s.bus, this.env, this.visitor, this.cine);
     this.prologue.onHandoff = () => this.onPrologueHandoff();
+    this.prologue.onPhone = (c) => s.ui.showPhone(c);
     this.approach = new Approach(this.env, this.visitor, this.prologue.app, this.cine, s.camera, s.bus, {
       prompt: (html) => s.ui.setPrompt(html),
       hint: (v) => s.ui.showHint(v),
