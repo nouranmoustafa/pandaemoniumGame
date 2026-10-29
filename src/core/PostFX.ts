@@ -13,12 +13,13 @@ const GradeShader = {
     uHurt: { value: 0 },
     uGrain: { value: 0.06 },
     uWarm: { value: 0 },
+    uTunnel: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uHurt; uniform float uGrain; uniform float uWarm;
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uHurt; uniform float uGrain; uniform float uWarm; uniform float uTunnel;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main() {
@@ -37,8 +38,10 @@ const GradeShader = {
       // Dusk: warm, slightly lifted shadows; the park takes it away.
       c = mix(c, c * vec3(1.08, 0.98, 0.86) + vec3(0.012, 0.006, 0.0), uWarm);
       // Vignette.
-      float v = smoothstep(0.85, 0.25, r * uVignette);
-      c *= mix(0.35, 1.0, v);
+      float v = smoothstep(0.85, 0.25, r * (uVignette + uTunnel * 2.2));
+      c *= mix(0.35 - uTunnel * 0.35, 1.0, v);
+      // Passing out: the colour drains and the dark closes in from the edges.
+      c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))) * 0.7, uTunnel * 0.75);
       c = mix(c, c * vec3(1.4, 0.4, 0.45), uHurt * smoothstep(0.2, 0.8, r));
       // Film grain.
       float g = hash(uv * vec2(1920.0, 1080.0) + fract(uTime) * 100.0) - 0.5;
@@ -70,6 +73,11 @@ export class PostFX {
     // The plaza's lamps sit close to the lens in the prologue: gentler, tighter bloom there.
     this.bloom.strength = 0.75 - w * 0.33;
     this.bloom.threshold = 0.82 + w * 0.08;
+  }
+
+  /** 0..1 — she is losing consciousness: tunnel vision, colour draining. */
+  setTunnel(k: number): void {
+    this.grade.uniforms.uTunnel.value = k;
   }
 
   pulseHurt(): void {

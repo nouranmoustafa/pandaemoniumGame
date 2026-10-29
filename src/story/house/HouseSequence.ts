@@ -556,21 +556,26 @@ export class HouseSequence {
     shots[0].frame(0, f0);
     this.director.setShots(shots);
     this.director.startFrom(f0.pos, f0.look, f0.fov);
-    this.s.fade(0, 2.4);
+    // Her eyes opening: half, shut again, then open.
+    this.s.fade(0.45, 0.9);
   }
 
   private wakeCues(): Cue[] {
     const V = this.perf;
     const doorAt = new THREE.Vector3(DOOR.x, DOOR.y + 1.8, DOOR.z);
     return [
+      { at: 0.75, run: () => this.s.fade(0.9, 0.3) },
+      { at: 1.05, run: () => this.s.fade(0.2, 0.7) },
+      { at: 1.8, run: () => this.s.fade(0.55, 0.25) },
+      { at: 2.05, run: () => this.s.fade(0, 0.8) },
       { at: 0.4, run: () => this.sound('creak') },
       // She comes to; the house is right behind her, its door open.
-      { at: 1.3, run: () => (V.express({ fear: 0.45, surprise: 0.4, distress: 0.4 }, 4), V.lookAt(doorAt, 0.8)) },
-      { at: 2.0, run: () => ((this.reachAt[0] = 2.0), this.sound('silk'), this.env.rippleGrass(DOOR.x - 6, 1)) },
-      { at: 2.4, run: () => ((this.reachAt[1] = 2.4), this.sound('silk')) },
-      { at: 2.8, run: () => ((this.reachAt[2] = 2.8), V.play('flinch'), V.express({ fear: 0.8, distress: 0.6 }, 6), (V.nervous = 0.7), this.s.shake(0.2)) },
+      { at: 2.3, run: () => (V.express({ fear: 0.45, surprise: 0.4, distress: 0.4 }, 4), V.lookAt(doorAt, 0.8)) },
+      { at: 3.0, run: () => ((this.reachAt[0] = 3.0), this.sound('silk'), this.env.rippleGrass(DOOR.x - 6, 1)) },
+      { at: 3.4, run: () => ((this.reachAt[1] = 3.4), this.sound('silk')) },
+      { at: 3.8, run: () => ((this.reachAt[2] = 3.8), V.play('flinch'), V.express({ fear: 0.8, distress: 0.6 }, 6), (V.nervous = 0.7), this.s.shake(0.2)) },
       {
-        at: 3.6,
+        at: 4.6,
         run: () => {
           this.pulling = true;
           this.aim = new THREE.Vector3(DOOR.x - 0.2, 0, DOOR.z);
@@ -579,7 +584,7 @@ export class HouseSequence {
           this.s.prompt('TAP SPACE — <span>PULL BACK</span>');
         },
       },
-      { at: 5.2, run: () => (V.lookAt(this.tmp.set(this.visitor.position.x - 20, 1.2, this.visitor.position.z).clone(), 1), (this.targetSpeed = 2.4)) },
+      { at: 6.2, run: () => (V.lookAt(this.tmp.set(this.visitor.position.x - 20, 1.2, this.visitor.position.z).clone(), 1), (this.targetSpeed = 2.4)) },
     ];
   }
 
@@ -603,7 +608,7 @@ export class HouseSequence {
       {
         // Wide, from the side: the grass rising for her, the open door.
         name: 'seized',
-        start: 1.9,
+        start: 2.9,
         blend: 1.2,
         frame: (_t, o) => {
           const p = v.position;
@@ -615,7 +620,7 @@ export class HouseSequence {
       {
         // Tracking alongside as she is dragged to the threshold.
         name: 'drag',
-        start: 3.8,
+        start: 4.8,
         blend: 1.6,
         frame: (_t, o) => {
           const p = v.position;

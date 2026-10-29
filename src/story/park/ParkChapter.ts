@@ -32,6 +32,15 @@ import { CourseDirector } from './CourseDirector';
 import { PARK_COURSE } from './course';
 import { Reroute } from './Reroute';
 
+/** Passing out, as [seconds, fade opacity, fade seconds]: her eyes close, open, close for good. */
+const BLINKS: Array<[number, number, number]> = [
+  [0.3, 0.8, 0.22],
+  [0.6, 0.15, 0.35],
+  [1.15, 0.9, 0.25],
+  [1.45, 0.45, 0.35],
+  [1.95, 1, 0.45],
+];
+
 /** Where the chase is decided: she runs on to her friends, or the road turns her round. */
 const DECIDE_X = CHASE.end - 30 * CHASE.dir;
 
@@ -88,8 +97,14 @@ export class ParkChapter implements Chapter {
   private overlay = new TargetingOverlay();
   private obstacleCtx: ObstacleContext;
   private demonCtx: DemonContext;
-  /** Seconds into her blackout after the road turned her round (-1 = not blacked out). */
-  private blackout = -1;
+  /** 0..1 — she is passing out (tunnel vision, drained colour; read by the post-processing). */
+  tunnel = 0;
+  /** Seconds into her fainting after the road turned her round (-1 = not fainting). */
+  private faint = -1;
+  /** Unconscious, carried down the slide to the house. */
+  private carried = false;
+  /** Seconds into the cut from the slide to her waking at the door (-1 = none). */
+  private wakeCut = -1;
   /** The road turning her round when the house wins the chase. */
   readonly reroute: Reroute;
   /** The chase has been decided (at DECIDE_X); the Demon's hand is off her. */
@@ -153,10 +168,10 @@ export class ParkChapter implements Chapter {
       fade: (o, sec) => s.ui.setFade(o, sec),
     });
     this.reroute = new Reroute(s.scene, this.env, this.visitor, s.camera, s.bus);
-    // Round the half-circle, she blacks out.
+    // Round the half-circle, she passes out.
     this.reroute.onTurned = () => {
-      this.blackout = 0;
-      s.ui.setFade(1, 0.35);
+      this.faint = 0;
+      s.camera.shake(0.3);
     };
     this.approach.onChase = () => this.beginChase(false);
     this.house = new HouseSequence(s.scene, this.env, this.visitor, {
@@ -311,7 +326,10 @@ export class ParkChapter implements Chapter {
     this.complete = false;
     this.chaseActive = false;
     this.titleFrame = null;
-    this.blackout = -1;
+    this.faint = -1;
+    this.tunnel = 0;
+    this.carried = false;
+    this.wakeCut = -1;
     this.decided = false;
     this.reroute.reset();
     this.hintShown = false;
@@ -498,23 +516,32 @@ export class ParkChapter implements Chapter {
       this.updateApproach(rawDt);
       return;
     }
-    // Black. She wakes at the house, and it is already pulling her in (see HouseSequence.startWake).
-    if (this.blackout >= 0) {
-      this.blackout += rawDt;
-      if (this.blackout > 1.4 && !this.house.active) {
+    // She passes out: the dark closes in, her eyes close, open, close.
+    if (this.faint >= 0) {
+      const f0 = this.faint;
+      this.faint += rawDt;
+      this.tunnel = smoothstep(0, 1.6, this.faint);
+      for (const [at, o, sec] of BLINKS) if (f0 < at && this.faint >= at) this.s.ui.setFade(o, sec);
+      if (this.faint > 2.6) this.beginCarried();
+    }
+    // The end of the slide: black, and she wakes at the door (see HouseSequence.startWake).
+    if (this.carried && this.visitor.controller.x >= COURSE.pavementEnd - 2) {
+      this.carried = false;
+      this.wakeCut = 0;
+      this.s.ui.setFade(1, 0.45);
+    }
+    if (this.wakeCut >= 0) {
+      this.wakeCut += rawDt;
+      if (this.wakeCut > 0.6 && !this.house.active) {
         const c = this.visitor.controller;
-        this.blackout = -1;
+        this.wakeCut = -1;
         this.chaseCaught = c.caughtCount;
         this.chaseTime = c.elapsed;
         this.chaseWinner = this.versusWinner;
-        this.s.camera.fpv = false;
-        this.visitor.setFirstPerson(false);
-        this.reroute.reset();
-        this.abilities.reset();
         this.house.startWake();
         this.onHouseBegin();
+        return;
       }
-      return;
     }
     this.timeScale = damp(this.timeScale, 1, 5, rawDt);
     const dt = rawDt * this.timeScale;
@@ -531,8 +558,10 @@ export class ParkChapter implements Chapter {
     if (!this.decided) this.director.update(dt, this.demonCtx);
     this.abilities.update(dt, this.obstacleCtx);
     this.obstacles.update(dt, this.obstacleCtx);
-    this.tricks.update(dt, c, this.observer, this.mind, this.sarcasm);
-    this.sarcasm.update(dt, c, this.observer);
+    if (!this.decided) {
+      this.tricks.update(dt, c, this.observer, this.mind, this.sarcasm);
+      this.sarcasm.update(dt, c, this.observer);
+    }
     this.inscriptions.update(dt, c.x);
 
     // The Demon's gusts move the whole park: grass, trees, leaves.
@@ -604,6 +633,39 @@ export class ParkChapter implements Chapter {
       this.abilities.reset();
       this.reroute.begin();
     }
+  }
+
+  /**
+   * Behind the black: the park has her. The path is already a hill and a slide (the road
+   * rerouted under her), and she goes down it unconscious, toward the house, seen from outside.
+   */
+  private beginCarried(): void {
+    const c = this.visitor.controller;
+    const pav = this.env.pavement;
+    this.faint = -1;
+    this.tunnel = 0;
+    this.reroute.reset();
+    this.abilities.reset();
+    pav.reset();
+    pav.beginSlide();
+    pav.rise = pav.slide = 1;
+    this.env.house.rise = 1;
+    this.env.house.snapRise();
+    c.dir = 1;
+    c.mode = 'run';
+    c.x = COURSE.hillCrest + 45;
+    c.z = 0;
+    c.lane = 1;
+    c.speed = 13;
+    c.controllable = false;
+    c.startSlide();
+    this.visitor.heading = Math.PI / 2;
+    this.visitor.setFirstPerson(false);
+    this.s.camera.fpv = false;
+    this.s.camera.dir = 1;
+    this.s.camera.snap(this.cameraSubject());
+    this.carried = true;
+    this.s.ui.setFade(0, 1.4);
   }
 
   get versusWinner(): 'demon' | 'visitor' {

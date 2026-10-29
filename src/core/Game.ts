@@ -469,6 +469,7 @@ export class Game {
     if (s !== 'paused') this.chapter.update(dt);
     if (s === 'playing') this.trackChaseStory();
     this.post.setWarmth(this.chapter.env.warmth);
+    this.post.setTunnel(this.chapter.tunnel);
     this.updateFade(rawDt > 0.5 ? 0.05 : rawDt);
     this.ui.update(dt);
     // Resize (if the render scale changes) before drawing: resizing clears the canvas, and doing it
