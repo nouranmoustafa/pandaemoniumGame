@@ -203,7 +203,8 @@ export class Prologue {
   }
 
   update(dt: number): ShotFrame {
-    this.time += dt;
+    // Stage 6 pacing: every beat is kept, with less waiting between them.
+    this.time += dt * (this.time < 31 ? 1.7 : 1.2);
     const t = this.time;
     for (let i = BEATS.length - 1; i >= 0; i--) {
       if (t >= BEATS[i].at) {

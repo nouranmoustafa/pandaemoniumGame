@@ -18,6 +18,9 @@ export const APP_BEATS = {
   replyTyping: 6.5,
   sent: 7.4,
   end: 8.2,
+  /** At the house: the date writes again. */
+  invite: 9.2,
+  inviteMsg: 10.2,
 };
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -417,8 +420,8 @@ export class DatingApp {
       g.restore();
       g.globalAlpha = 1;
       y += 190;
-      // Location card.
-      if (t > B.location) {
+      // Location card (scrolled away once the new message arrives).
+      if (t > B.location && t < B.invite) {
         const lk = easeOutCubic(clamp((t - B.location) / 0.5, 0, 1));
         g.globalAlpha = lk;
         g.fillStyle = '#2e2530';
@@ -485,6 +488,33 @@ export class DatingApp {
       g.textAlign = 'right';
       g.fillText(t > B.sent + 0.6 ? 'Read' : 'Delivered', W - 44, y + 134);
       g.globalAlpha = 1;
+    }
+    // The date again: typing, then the invitation.
+    if (t > B.invite) {
+      const iy = y + 170;
+      if (t < B.inviteMsg) {
+        g.fillStyle = '#2e2530';
+        roundRect(g, 40, iy, 150, 76, 38);
+        g.fill();
+        for (let i = 0; i < 3; i++) {
+          g.fillStyle = `rgba(255,255,255,${0.35 + 0.65 * Math.max(0, Math.sin(t * 8 - i * 0.9))})`;
+          g.beginPath();
+          g.arc(80 + i * 30, iy + 38, 9, 0, Math.PI * 2);
+          g.fill();
+        }
+      } else {
+        const k = easeOutBack(clamp((t - B.inviteMsg) / 0.4, 0, 1));
+        g.globalAlpha = clamp(k, 0, 1);
+        g.fillStyle = '#2e2530';
+        roundRect(g, 40, iy, 480, 170, 34);
+        g.fill();
+        g.fillStyle = '#fff';
+        g.textAlign = 'left';
+        g.font = `400 42px ${SANS}`;
+        g.fillText("I'm inside. The door", 32 + 40, iy + 66);
+        g.fillText("is open. Come in.", 32 + 40, iy + 122);
+        g.globalAlpha = 1;
+      }
     }
   }
 }

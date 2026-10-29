@@ -28,7 +28,7 @@ const VEIL = [5.6, 8.0] as const;
 /** Stage 5 follows straight on (laughter outside), so the house no longer fades to its end card here. */
 const DRESS_END = 13.4;
 /** Resist counts that earn a remark (see HOUSE_LINES.resist). */
-const RESIST_REMARKS = [1, 2, 3, 5, 8];
+const RESIST_REMARKS = [1, 2, 3, 5];
 
 export interface HouseServices {
   bus: EventBus;
@@ -88,6 +88,8 @@ export class HouseSequence {
   /** Vines that grow across the inside of the front door when she tries it. */
   private doorVines: Vine[] = [];
   private doorSeal = 0;
+  /** The capture at the door: vines out of the ground for her wrists and waist. */
+  private captureVines: Vine[] = [];
   /** Per ribbon: when it starts to reach for her on the current clock (-1 = not yet). */
   private reachAt = [-1, -1, -1];
   private spiral = 0;
@@ -125,6 +127,11 @@ export class HouseSequence {
     }
     this.dress = new WeddingDress(visitor.character, scene);
     const vm = vineMaterial();
+    for (let k = 0; k < 3; k++) {
+      const v = new Vine(vm, k === 2 ? 0.06 : 0.045, 48, 7, 7);
+      scene.add(v.mesh);
+      this.captureVines.push(v);
+    }
     for (let k = 0; k < 5; k++) {
       const v = new Vine(vm, 0.045 + (k % 2) * 0.015, 32, 7, 6);
       const y = 0.4 + k * 0.62;
@@ -191,6 +198,7 @@ export class HouseSequence {
   /** The door opens. She has stopped in front of the house (the chase's arrival). */
   start(cameraFrom: ShotFrame): void {
     this.reset();
+    this.env.house.group.position.set(COURSE.houseX, this.env.house.group.position.y, COURSE.houseZ);
     this.env.house.rise = 1;
     this.env.house.snapRise();
     this.phase = 'threshold';
@@ -319,7 +327,8 @@ export class HouseSequence {
     this.perf.play('resist');
     this.s.shake(0.12);
     this.sound('snap');
-    if (RESIST_REMARKS[this.remarkIndex] === this.resists) {
+    // At the door the capture speaks for itself; inside, the house keeps count aloud.
+    if (this.phase !== 'threshold' && RESIST_REMARKS[this.remarkIndex] === this.resists) {
       this.s.say(HOUSE_LINES.resist[this.remarkIndex], 3.4);
       this.remarkIndex++;
     }
@@ -462,12 +471,18 @@ export class HouseSequence {
         this.layHold(k, holds[k], this.rootFor(k), taut);
         r.extent = 1 - (1 - u) * (1 - u) * (1 - u);
       } else r.extent = 0;
+      // At the door it is vines that take her; ribbons only inside.
+      const vine = this.captureVines[k];
+      vine.extent = this.phase === 'threshold' ? r.extent : 0;
+      if (this.phase === 'threshold') r.extent = 0;
+      vine.update(t);
       r.update(t);
     }
   }
 
   private rootFor(k: number): THREE.Vector3 {
-    if (this.phase === 'threshold') return this.tmp2.set(DOOR.x + 0.6, DOOR.y + [1.8, 2.3, 1.2][k], DOOR.z + [0.5, -0.5, 0.05][k]);
+    // Out of the ground between her and the porch.
+    if (this.phase === 'threshold') return this.tmp2.set(DOOR.x - 1.4 - k * 0.5, 0.02, DOOR.z + [0.9, -0.9, 0.1][k]);
     return this.interior.toWorld(ROOM.archX - 0.1, [2.45, 2.6, 2.2][k], [0.45, -0.45, 0][k], this.tmp2);
   }
 
@@ -496,7 +511,8 @@ export class HouseSequence {
       const a = (j / 4) * Math.PI * 2 + 0.6;
       pts[n + j].set(end.x + px * Math.cos(a) * R, end.y + Math.sin(a) * R * (hold === 'hips' ? 0.25 : 1), end.z + pz * Math.cos(a) * R + (hold === 'hips' ? Math.sin(a) * R : 0));
     }
-    this.ribbons[k].setPath(pts.slice(0, n + 4));
+    const target = this.phase === 'threshold' ? this.captureVines[k] : this.ribbons[k];
+    target.setPath(pts.slice(0, n + 4));
   }
 
   /** Down from the dark above her, winding round her body to the floor. */
@@ -524,7 +540,7 @@ export class HouseSequence {
       { at: 0.15, run: () => (this.sound('creak'), V.lookAt(doorAt, 0.9), V.express({ concern: 0.6, fear: 0.2 }, 3)) },
       { at: 1.5, run: () => ((this.reachAt[0] = 1.5), this.sound('silk')) },
       { at: 2.1, run: () => (V.express({ fear: 0.5, surprise: 0.5 }, 6), (V.nervous = 0.6)) },
-      { at: 2.65, run: () => (V.play('flinch'), V.lookAt(this.bone('wristR', new THREE.Vector3()), 1), this.s.shake(0.15), this.s.say(HOUSE_LINES.grip, 3.6)) },
+      { at: 2.65, run: () => (V.play('flinch'), V.lookAt(this.bone('wristR', new THREE.Vector3()), 1), this.s.shake(0.15)) },
       { at: 2.7, run: () => ((this.reachAt[1] = 2.7), this.sound('silk')) },
       { at: 3.5, run: () => ((this.reachAt[2] = 3.5), this.sound('silk')) },
       {

@@ -27,6 +27,7 @@ import type { Chapter, ChapterServices } from '../Chapter';
 import { type FinaleJump, FinaleSequence } from '../finale/Finale';
 import { HouseSequence } from '../house/HouseSequence';
 import { HANDOFF_AT, Prologue } from '../prologue/Prologue';
+import { Approach } from './Approach';
 import { CourseDirector } from './CourseDirector';
 import { PARK_COURSE } from './course';
 
@@ -65,6 +66,7 @@ export class ParkChapter implements Chapter {
   readonly house: HouseSequence;
   readonly finale: FinaleSequence;
   readonly cine = new CinematicDirector();
+  readonly approach: Approach;
   mode: GameMode = 'single';
   complete = false;
   /** False during the title backdrop and the prologue. */
@@ -135,6 +137,11 @@ export class ParkChapter implements Chapter {
     this.panel = new DemonPanel(s.canvas, s.camera.camera, this.abilities, this.human, this.overlay, this.env.pavement, () => this.obstacleCtx);
     this.prologue = new Prologue(s.scene, s.bus, this.env, this.visitor, this.cine);
     this.prologue.onHandoff = () => this.onPrologueHandoff();
+    this.approach = new Approach(this.env, this.visitor, this.prologue.app, this.cine, s.camera, s.bus, {
+      prompt: (html) => s.ui.setPrompt(html),
+      hint: (v) => s.ui.showHint(v),
+    });
+    this.approach.onChase = () => this.beginChase(false);
     this.house = new HouseSequence(s.scene, this.env, this.visitor, {
       bus: s.bus,
       input: s.input,
@@ -245,9 +252,30 @@ export class ParkChapter implements Chapter {
   start(snap = false): void {
     this.prologue.release();
     this.chaseActive = true;
-    this.visitor.controller.start();
-    if (snap) this.s.camera.snap(this.cameraSubject());
-    else this.s.camera.beginHandoff(this.cameraSubject(), 2.2);
+    if (!snap) {
+      // From the prologue: up the path to the house first (see Approach).
+      this.approach.begin();
+      return;
+    }
+    // Retry: straight into the chase, the house already gone back under.
+    this.approach.cancel();
+    this.approach.placeFinalHouse();
+    this.beginChase(true);
+  }
+
+  /** The chase proper: in her eyes, away again — for the park's exit. */
+  private beginChase(snap: boolean): void {
+    const c = this.visitor.controller;
+    c.dir = 1;
+    if (c.mode === 'idle') c.start();
+    c.controllable = true;
+    this.visitor.setFirstPerson(true);
+    this.s.camera.fpv = true;
+    this.s.camera.dir = 1;
+    if (snap) {
+      this.visitor.heading = Math.PI / 2;
+      this.s.camera.snap(this.cameraSubject());
+    }
     this.hintShown = true;
     this.hintTimer = 0;
     this.s.ui.showHint(true);
@@ -266,6 +294,7 @@ export class ParkChapter implements Chapter {
     this.openingSaid = false;
     this.timeScale = 1;
     this.env.pavement.reset();
+    this.approach.reset();
     this.finale.reset();
     this.house.reset();
     this.env.reset();
@@ -284,10 +313,16 @@ export class ParkChapter implements Chapter {
     // Debug skip-ahead (?x=…) starts in the park; otherwise she starts with her friends.
     if (this.startX <= COURSE.start) this.prologue.reset();
     for (const f of this.prologue.friends) f.char.object.visible = true;
+    // The house waits at the top of the path; the camera is third person again.
+    this.approach.placeFirstHouse();
+    this.s.camera.fpv = false;
+    this.s.camera.dir = 1;
+    this.visitor.setFirstPerson(false);
     // Debug skip-ahead into the hill: bring the set-piece up instantly.
     if (this.startX > COURSE.pavementStart - 20) this.env.pavement.beginRise();
     if (this.startX > COURSE.hillCrest - 26) {
       this.env.pavement.beginSlide();
+      this.approach.placeFinalHouse();
       this.env.house.rise = 1;
       this.env.house.snapRise();
     }
@@ -296,9 +331,11 @@ export class ParkChapter implements Chapter {
     this.s.camera.snap(this.cameraSubject());
   }
 
+  private eyesTmp = new THREE.Vector3();
+
   private cameraSubject() {
     const c = this.visitor.controller;
-    return { position: this.visitor.position, speed: c.speed, slide: c.slideBlend };
+    return { position: this.visitor.position, speed: c.speed, slide: c.slideBlend, eyes: this.visitor.eyesWorld(this.eyesTmp), heading: this.visitor.heading };
   }
 
   /** Title backdrop and prologue: the world lives, the Demon waits. */
@@ -315,6 +352,21 @@ export class ParkChapter implements Chapter {
     this.env.setAnxiety(0);
     this.env.update(dt, this.s.camera.camera, this.visitor.position);
     this.s.audio.update(dt, { speed: 0, sliding: false, gust: 0, playing: false, peace: false, anxiety: 0, city: this.env.warmth, prologue: true });
+  }
+
+  /** Up the path to the house, the invitation, and the first flight back toward the gate. */
+  private updateApproach(dt: number): void {
+    const frame = this.approach.update(dt, this.s.input);
+    if (frame) this.s.camera.setCinematic(frame.pos, frame.look, frame.fov);
+    else this.s.camera.update(dt, this.cameraSubject());
+    const x = this.visitor.position.x;
+    this.env.warmth = this.warmthAt(x);
+    this.env.setAnxiety(0.4);
+    this.env.update(dt, this.s.camera.camera, this.visitor.position);
+    const hide = x > ENTRANCE.gateX + 14;
+    for (const f of this.prologue.friends) f.char.object.visible = !hide;
+    const c = this.visitor.controller;
+    this.s.audio.update(dt, { speed: c.speed, sliding: false, gust: 0.3, playing: true, peace: false, anxiety: 0.5, city: this.env.warmth });
   }
 
   /** Beside and a little above the lens; strong only when the camera is close to someone. */
@@ -345,6 +397,7 @@ export class ParkChapter implements Chapter {
 
   /** Debug / test: start Stage 5 at a checkpoint (?stage5=window|choice|run|reveal). */
   jumpFinale(to: FinaleJump): void {
+    this.approach.placeFinalHouse();
     this.chaseActive = true;
     this.panel.setActive(false);
     this.chaseCaught = 0;
@@ -416,6 +469,10 @@ export class ParkChapter implements Chapter {
       this.updateCinematic(rawDt);
       return;
     }
+    if (this.approach.active) {
+      this.updateApproach(rawDt);
+      return;
+    }
     this.timeScale = damp(this.timeScale, 1, 5, rawDt);
     const dt = rawDt * this.timeScale;
     this.time += dt;
@@ -484,11 +541,11 @@ export class ParkChapter implements Chapter {
       c.controllable = false;
       this.arriveTime = 0;
       this.panel.setActive(false);
+      // Out of her eyes: the capture is seen from outside, and nothing is said.
+      this.s.camera.fpv = false;
+      this.visitor.setFirstPerson(false);
       this.s.camera.setMode('arrive');
       this.s.ui.showHint(false);
-      let line: string = c.caughtCount === 0 ? PARK_LINES.untouched : PARK_LINES.arrive;
-      if (this.mode === 'versus') line = this.versusWinner === 'demon' ? PARK_LINES.versusDemon : PARK_LINES.versusVisitor;
-      this.s.ui.say(line, 4);
     }
     // She slows to a stop at the foot of the porch; then the house takes her.
     if (this.arriveTime >= 0) {

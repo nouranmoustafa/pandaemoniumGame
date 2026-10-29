@@ -8,6 +8,9 @@ export interface CameraSubject {
   position: THREE.Vector3;
   speed: number;
   slide: number;
+  /** First person: her eyes, and which way she faces. */
+  eyes?: THREE.Vector3;
+  heading?: number;
 }
 
 /**
@@ -40,6 +43,8 @@ export class ChaseCamera {
   dir: 1 | -1 = 1;
   /** 0..1 — Stage 5's approach to the friends: a lower, more threatening frame. */
   menace = 0;
+  /** The escape is seen through her own eyes. */
+  fpv = false;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, aspect, 0.1, 2500);
@@ -102,6 +107,15 @@ export class ChaseCamera {
   }
 
   private computeChase(s: CameraSubject): void {
+    if (this.fpv && s.eyes) {
+      // Her eyes, a touch forward of them; looking where she faces, a little down the path.
+      const h = s.heading ?? Math.PI / 2;
+      const fx = Math.sin(h);
+      const fz = Math.cos(h);
+      this.desiredPos.set(s.eyes.x + fx * 0.12, s.eyes.y + 0.02, s.eyes.z + fz * 0.12);
+      this.desiredLook.set(s.eyes.x + fx * 12, s.eyes.y - 0.55 - s.slide * 1.5, s.eyes.z + fz * 12);
+      return;
+    }
     const p = s.position;
     const o = CAMERA.offset;
     const slide = s.slide;
@@ -144,12 +158,18 @@ export class ChaseCamera {
       const targetLag = clamp((s.speed - RUN.jogSpeed) * 0.12, -0.6, 1.4);
       this.lag = damp(this.lag, targetLag, 1.5, dt);
       this.computeChase(s);
+      if (this.fpv) {
+        // Close to her head, smoothed just enough to take the jolt out of each stride.
+        this.pos.lerp(this.desiredPos, 1 - Math.exp(-22 * dt));
+        this.look.lerp(this.desiredLook, 1 - Math.exp(-14 * dt));
+      } else {
       this.pos.x = damp(this.pos.x, this.desiredPos.x, 12, dt);
       this.pos.y = damp(this.pos.y, this.desiredPos.y, 4, dt);
       this.pos.z = damp(this.pos.z, this.desiredPos.z, 3, dt);
       this.look.x = damp(this.look.x, this.desiredLook.x, 10, dt);
       this.look.y = damp(this.look.y, this.desiredLook.y, 4, dt);
       this.look.z = damp(this.look.z, this.desiredLook.z, 3, dt);
+      }
     } else {
       // Arrival: rise and turn to frame the house as the door opens.
       this.arriveT += dt;
@@ -162,7 +182,7 @@ export class ChaseCamera {
       this.look.lerp(this.desiredLook, 1 - Math.exp(-1.2 * dt));
     }
 
-    const targetFov = CAMERA.fov + smoothstep(RUN.jogSpeed, 20, s.speed) * 7 + s.slide * 3 - this.menace * 8;
+    const targetFov = (this.fpv ? 66 : CAMERA.fov) + smoothstep(RUN.jogSpeed, 20, s.speed) * 7 + s.slide * 3 - this.menace * 8;
     if (this.handoff) {
       const h = this.handoff;
       h.t += dt;

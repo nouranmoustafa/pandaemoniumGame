@@ -357,6 +357,7 @@ export class FinaleSequence {
   /** The gown is on and the sheet is off the mirror: she hears laughter outside. */
   start(): void {
     this.reset();
+    this.env.house.group.position.set(COURSE.houseX, this.env.house.group.position.y, COURSE.houseZ);
     this.env.house.rise = 1;
     this.env.house.snapRise();
     this.visitor.useGeneratedBody(true);

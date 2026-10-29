@@ -73,6 +73,8 @@ export class House {
    */
   rise = 1;
   private riseNow = 1;
+  /** Per second. */
+  riseRate = 0.32;
   /** Stage 5: 0 = shut, 1 = open — the window she climbs out of. */
   escapeOpen = 0;
   /** Stage 5: the vine that follows her out of the window, and the ones that keep the door. */
@@ -348,7 +350,7 @@ export class House {
   update(dt: number): void {
     this.time += dt;
     if (this.riseNow !== this.rise) {
-      this.riseNow += Math.sign(this.rise - this.riseNow) * Math.min(Math.abs(this.rise - this.riseNow), dt * 0.32);
+      this.riseNow += Math.sign(this.rise - this.riseNow) * Math.min(Math.abs(this.rise - this.riseNow), dt * this.riseRate);
       this.applyRise();
     }
     for (const w of this.windows) {

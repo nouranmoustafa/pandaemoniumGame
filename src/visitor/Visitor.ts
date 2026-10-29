@@ -100,6 +100,12 @@ export class Visitor {
     this.character.object.visible = on;
   }
 
+  /** First person: she is the camera, so her own body is not drawn. */
+  setFirstPerson(on: boolean): void {
+    this.character.object.visible = !on && !this.glb;
+    if (this.glb) this.glb.object.visible = !on;
+  }
+
   /** The script's gestures, as the GLB's own clips (when it has them). */
   private glbGesture(g: GestureName): void {
     if (!this.glb) return;

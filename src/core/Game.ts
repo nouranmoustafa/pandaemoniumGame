@@ -66,6 +66,8 @@ export class Game {
   private pixelRatio = this.maxPixelRatio;
   private frameTimeAvg = 1 / 60;
   private qualityTimer = 0;
+  private qualityAge = 0;
+  private fastStreak = 0;
 
   constructor(container: HTMLElement, opts: GameOptions = {}) {
     this.opts = opts;
@@ -382,14 +384,22 @@ export class Game {
    * strong ones climb back to full sharpness.
    */
   private adaptQuality(rawDt: number): void {
+    // Each change reallocates the post-processing buffers (a visible black flash), so changes are
+    // rare: none in the first seconds (shader warm-up stalls), down only when it is persistently
+    // slow, and back up only after a long, comfortably fast stretch. No oscillation.
     this.frameTimeAvg += (rawDt - this.frameTimeAvg) * 0.05;
     this.qualityTimer += rawDt;
-    if (this.qualityTimer < 1.5) return;
+    this.qualityAge += rawDt;
+    if (this.qualityTimer < 3 || this.qualityAge < 8) return;
     this.qualityTimer = 0;
     const ms = this.frameTimeAvg * 1000;
     const prev = this.pixelRatio;
-    if (ms > 21) this.pixelRatio = Math.max(0.6, this.pixelRatio - 0.15);
-    else if (ms < 13) this.pixelRatio = Math.min(this.maxPixelRatio, this.pixelRatio + 0.1);
+    this.fastStreak = ms < 11 ? this.fastStreak + 1 : 0;
+    if (ms > 24) this.pixelRatio = Math.max(0.6, this.pixelRatio - 0.2);
+    else if (this.fastStreak >= 5) {
+      this.fastStreak = 0;
+      this.pixelRatio = Math.min(this.maxPixelRatio, this.pixelRatio + 0.1);
+    }
     if (prev !== this.pixelRatio) {
       this.renderer.setPixelRatio(this.pixelRatio);
       this.post.setSize(window.innerWidth, window.innerHeight);
@@ -429,9 +439,11 @@ export class Game {
     this.post.setWarmth(this.chapter.env.warmth);
     this.updateFade(rawDt > 0.5 ? 0.05 : rawDt);
     this.ui.update(dt);
+    // Resize (if the render scale changes) before drawing: resizing clears the canvas, and doing it
+    // after the frame left a blank (black) frame on screen.
+    if (rawDt > 0 && rawDt < 0.5) this.adaptQuality(rawDt);
     this.post.render(dt);
     this.input.endFrame();
     this.frames++;
-    if (rawDt > 0 && rawDt < 0.5) this.adaptQuality(rawDt);
   };
 }
