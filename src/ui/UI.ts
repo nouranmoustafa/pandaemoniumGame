@@ -1,5 +1,7 @@
 import './styles.css';
 import { MODE_TUNING } from '../config';
+import type { Input, InputAction } from '../core/Input';
+import { TOUCH } from './touch';
 
 export interface UIHandlers {
   onPlay: (mode: 'single' | 'versus') => void;
@@ -26,7 +28,7 @@ export class UI {
   private root = el('div', 'ui-layer');
   private title = el('div', 'title-screen');
   private howto = el('div', 'howto');
-  private hint = el('div', 'hint', 'UP / DOWN — <span>DODGE</span><br>TAP SPACE — <span>RUN</span>');
+  private hint = el('div', 'hint', TOUCH ? '◀ ▶ — <span>DODGE</span><br>TAP ▲ — <span>RUN</span>' : 'UP / DOWN — <span>DODGE</span><br>TAP SPACE — <span>RUN</span>');
   /** Stage 4's in-scene prompt (pull back), styled like the hint. */
   private prompt = el('div', 'hint prompt');
   private subtitle = el('div', 'subtitle');
@@ -40,7 +42,11 @@ export class UI {
   private hurt = el('div', 'hurt');
   private dodge = el('div', 'dodge-flash');
   private fade = el('div', 'fade');
-  private press = el('div', 'press-any', 'PRESS ANY KEY');
+  private press = el('div', 'press-any', TOUCH ? 'TAP TO BEGIN' : 'PRESS ANY KEY');
+  /** Phones: the on-screen arrows, a pause button, and a nudge to turn sideways. */
+  private pad = el('div', 'touch-pad');
+  private pauseBtn = el('button', 'touch-pause', 'II');
+  private rotate = el('div', 'rotate-hint', 'TURN YOUR PHONE SIDEWAYS');
   private menu!: HTMLDivElement;
   private skip = el('div', 'skip-intro', 'HOLD ESC — SKIP INTRO<i></i>');
   private barTop = el('div', 'letterbox top');
@@ -63,7 +69,9 @@ export class UI {
     play.addEventListener('click', () => handlers.onPlay('single'));
     versus.addEventListener('click', () => handlers.onPlay('versus'));
     how.addEventListener('click', () => this.howto.classList.toggle('open'));
-    menu.append(play, versus, how);
+    // Local 1v1 needs a keyboard and a mouse: on phones it is single player only.
+    if (TOUCH) menu.append(play, how);
+    else menu.append(play, versus, how);
     this.howto.innerHTML = `
       <p>She runs on her own. The park would rather she didn't.</p>
       <p><kbd>↑</kbd><kbd>↓</kbd> change lanes — dodge whatever the park sends.</p>
@@ -75,6 +83,15 @@ export class UI {
       <p>At the house, <kbd>SPACE</kbd> pulls back against whatever has hold of her. It won't help. It will be noted.</p>
       <p>At the window, <kbd>SPACE</kbd> wipes the glass; <kbd>↑</kbd><kbd>↓</kbd> and <kbd>SPACE</kbd> choose; <kbd>SPACE</kbd>, tapped hard, pulls her free.</p>
       <p><kbd>ESC</kbd> or <kbd>P</kbd> pause. During the opening and the house, <em>hold</em> <kbd>ESC</kbd> to skip.</p>`;
+    if (TOUCH)
+      this.howto.innerHTML = `
+      <p>She runs on her own. The park would rather she didn't.</p>
+      <p><kbd>◀</kbd><kbd>▶</kbd> change lanes — dodge whatever the park sends.</p>
+      <p><kbd>▲</kbd> <em>tap</em> repeatedly to run faster. Stop, and she tires back to a jog.</p>
+      <p>Every attack is announced: thrashing grass, red cracks, a lifted limb, gathering wind, bubbling water, pale embers.</p>
+      <p>At the house, <kbd>▲</kbd> pulls back. At the window, <kbd>▲</kbd> wipes the glass and pulls her free; tap a choice to make it.</p>
+      <p><kbd>II</kbd> pauses. During the opening and the house, <em>hold</em> the skip bar to skip.</p>
+      <p>Play with the phone turned sideways.</p>`;
     this.title.append(this.press, menu, this.howto, el('div', 'stage-mark', 'STAGE V — THE WINDOW'));
 
     this.pause.innerHTML = '<h2>Paused</h2><p class="line">It will wait. It is very good at waiting.</p>';
@@ -98,7 +115,8 @@ export class UI {
     });
 
     this.end.dataset.role = 'end';
-    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.choice, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.phoneView, this.fade, this.caption);
+    if (TOUCH) document.body.classList.add('touch');
+    this.root.append(this.barTop, this.barBottom, this.skip, this.hurt, this.dodge, this.hint, this.prompt, this.choice, this.subtitle, this.effort, this.title, this.pause, this.end, mute, this.pad, this.pauseBtn, this.phoneView, this.fade, this.caption, this.rotate);
     document.body.appendChild(this.root);
     this.endHandlers = handlers;
 
@@ -123,7 +141,7 @@ export class UI {
   /** "HOLD ESC — SKIP INTRO", with a meter that fills while it's held. */
   showSkip(v: boolean, progress: number, label = 'HOLD ESC — SKIP INTRO'): void {
     this.skip.classList.toggle('show', v);
-    if (this.skip.firstChild) this.skip.firstChild.textContent = label;
+    if (this.skip.firstChild) this.skip.firstChild.textContent = TOUCH ? label.replace('HOLD ESC', 'HOLD HERE') : label;
     (this.skip.lastElementChild as HTMLElement).style.transform = `scaleX(${Math.min(1, progress).toFixed(3)})`;
   }
 
@@ -139,7 +157,7 @@ export class UI {
 
   /** A short in-scene prompt (null hides it). */
   setPrompt(html: string | null): void {
-    if (html) this.prompt.innerHTML = html;
+    if (html) this.prompt.innerHTML = TOUCH ? html.replace(/SPACE/g, '▲').replace(/↑ ↓|UP \/ DOWN/g, '◀ ▶') : html;
     this.prompt.classList.toggle('show', !!html);
   }
 
@@ -159,7 +177,7 @@ export class UI {
       });
       this.choice.append(b);
     });
-    this.choice.append(el('p', 'choice-keys', '↑ / ↓ — SELECT &nbsp;·&nbsp; SPACE — CONFIRM'));
+    this.choice.append(el('p', 'choice-keys', TOUCH ? 'TAP A CHOICE' : '↑ / ↓ — SELECT &nbsp;·&nbsp; SPACE — CONFIRM'));
   }
 
   /** Show the phone's screen (the app canvas itself) large on screen; null hides it. */
@@ -187,7 +205,45 @@ export class UI {
   }
 
   /** Hint lines adapt to the mode (1v1 adds the Demon's control). */
+  /** Wire the phone controls to the game's input (no-op on desktop). */
+  bindTouch(input: Input): void {
+    if (!TOUCH) return;
+    const button = (cls: string, label: string, action: InputAction) => {
+      const b = el('button', cls, label);
+      const up = () => (input.touchUp(action), b.classList.remove('down'));
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        b.setPointerCapture(e.pointerId);
+        b.classList.add('down');
+        input.touchDown(action);
+      });
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+      return b;
+    };
+    // The chase runs toward the far end of the park: her right is the upper lane.
+    this.pad.append(button('tp-left', '◀', 'down'), button('tp-right', '▶', 'up'), button('tp-ahead', '▲', 'sprint'));
+    this.pauseBtn.addEventListener('pointerdown', (e) => (e.preventDefault(), input.simulate('pause')));
+    // Hold the skip bar itself (it stands in for holding Escape).
+    const release = () => input.touchUp('escape');
+    this.skip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.skip.setPointerCapture(e.pointerId);
+      input.touchDown('escape');
+    });
+    this.skip.addEventListener('pointerup', release);
+    this.skip.addEventListener('pointercancel', release);
+  }
+
+  /** The on-screen arrows and pause: only while she is in the player's hands. */
+  showPad(v: boolean): void {
+    this.pad.classList.toggle('show', v);
+    this.pauseBtn.classList.toggle('show', v);
+  }
+
   setMode(mode: 'single' | 'versus'): void {
+    if (TOUCH) return;
     this.hint.innerHTML =
       mode === 'versus'
         ? 'VISITOR · UP / DOWN — <span>DODGE</span> · TAP SPACE — <span>RUN</span><br>DEMON · MOUSE — <span>CHOOSE A POWER, CLICK THE PATH</span>'

@@ -5,6 +5,7 @@ import { ParkChapter } from '../story/park/ParkChapter';
 import type { FinaleJump } from '../story/finale/Finale';
 import type { HouseBeat } from '../story/house/HouseSequence';
 import type { PrologueBeat } from '../story/prologue/Prologue';
+import { TOUCH } from '../ui/touch';
 import { UI } from '../ui/UI';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -150,6 +151,7 @@ export class Game {
     this.registerFlow();
     this.registerStory();
     this.bindInput();
+    this.ui.bindTouch(this.input);
 
     window.addEventListener('resize', this.onResize);
     document.addEventListener('visibilitychange', () => {
@@ -165,6 +167,8 @@ export class Game {
   private static detectLowGpu(renderer: THREE.WebGLRenderer): boolean {
     const q = new URLSearchParams(location.search).get('quality');
     if (q === 'low' || q === 'high') return q === 'low';
+    // Phones and tablets (iPhones report only "Apple GPU", like Macs do).
+    if (TOUCH) return true;
     const gl = renderer.getContext();
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
@@ -189,6 +193,7 @@ export class Game {
     this.states
       .register('title', {
         enter: () => {
+          this.ui.showPad(false);
           this.chapter.enterTitle();
           this.ui.showTitle(true);
           this.ui.hideEnd();
@@ -199,6 +204,7 @@ export class Game {
       })
       .register('prologue', {
         enter: () => {
+          this.ui.showPad(false);
           this.ui.showPause(false);
           this.ui.setLetterbox(true);
         },
@@ -210,6 +216,7 @@ export class Game {
       })
       .register('playing', {
         enter: (from) => {
+          this.ui.showPad(true);
           this.ui.showPause(false);
           this.ui.setLetterbox(false);
           if (from !== 'paused') this.story.go('CHASE_GAMEPLAY');
@@ -217,6 +224,7 @@ export class Game {
       })
       .register('house', {
         enter: (from) => {
+          this.ui.showPad(true);
           this.ui.showPause(false);
           this.ui.showHint(false);
           this.ui.setLetterbox(!this.chapter.finale.running);
@@ -228,9 +236,10 @@ export class Game {
           this.ui.showSkip(false, 0);
         },
       })
-      .register('paused', { enter: () => this.ui.showPause(true), exit: () => this.ui.showPause(false) })
+      .register('paused', { enter: () => (this.ui.showPad(false), this.ui.showPause(true)), exit: () => this.ui.showPause(false) })
       .register('ended', {
         enter: () => {
+          this.ui.showPad(false);
           this.story.go('FINAL_ENDING');
           this.ui.setLetterbox(false);
           if (this.endInfo.finale) {

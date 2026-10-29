@@ -73,6 +73,16 @@ export class Input {
     for (const l of this.listeners) l(action);
   }
 
+  /** A touch button going down: a press, held until release(). */
+  touchDown(action: InputAction): void {
+    this.held.add(action);
+    this.simulate(action);
+  }
+
+  touchUp(action: InputAction): void {
+    this.held.delete(action);
+  }
+
   endFrame(): void {
     this.pressed.clear();
   }
