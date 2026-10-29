@@ -5,7 +5,7 @@ import { ParkChapter } from '../story/park/ParkChapter';
 import type { FinaleJump } from '../story/finale/Finale';
 import type { HouseBeat } from '../story/house/HouseSequence';
 import type { PrologueBeat } from '../story/prologue/Prologue';
-import { TOUCH } from '../ui/touch';
+import { TOUCH, TOUCH_PACE } from '../ui/touch';
 import { UI } from '../ui/UI';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -475,7 +475,9 @@ export class Game {
       this.skipHold = 0;
       this.ui.showSkip(false, 0);
     }
-    if (s !== 'paused') this.chapter.update(dt);
+    // Phones: the running parts play slower (the arrows are harder to work than keys).
+    const gameDt = TOUCH && (s === 'playing' || running) ? dt * TOUCH_PACE : dt;
+    if (s !== 'paused') this.chapter.update(gameDt);
     if (s === 'playing') this.trackChaseStory();
     this.post.setWarmth(this.chapter.env.warmth);
     this.post.setTunnel(this.chapter.tunnel);
