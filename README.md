@@ -48,7 +48,7 @@ From the title screen, choose **PLAY ALONE** (vs the AI Demon) or **LOCAL 1V1**.
 | The window | **Space** (tap) | Wipe the glass. Three wipes clear it. |
 | The window | **↑ / ↓**, **Space** | Choose *Leave through the window* or *Stay inside*. Clicking an option also works. |
 | The window | **Space** (tap) | Pull free of the frame: six hard pulls. If she stops pulling, the vines take a little back. |
-| The run back | **↑ / ↓**, **Space** | The chase's controls. Escape pauses, as in the chase. |
+| The run back | — | She runs to her friends on her own (about 8 s): no dodging, no tapping. Escape pauses. |
 
 In 1v1, the Demon wins if she is caught 5 times before she reaches the house; otherwise the Visitor wins. Both modes then play the house sequence.
 
@@ -68,7 +68,7 @@ In 1v1, the Demon wins if she is caught 5 times before she reaches the house; ot
 | `WINDOW_ESCAPE` | The drapes thrash, and the frame and the door behind her groan. The latch resists, then gives, and the fog thins in the night air. She climbs onto the sill. |
 | `WINDOW_STRUGGLE` | The gown catches on the sill, and vines come out of the frame. TAP SPACE — PULL FREE. The gown tears and she falls out. The hem stays ragged and the veil short from here on. |
 | `OUTSIDE_LANDING` | She lands on the grass below the house's side window, gets up and looks back. A vine follows her out of the window, stops short of her and withdraws. The window shuts and the house dims. There is no line and no remark. |
-| `FINAL_RUN` | The chase's controls, back along the park toward the gate (`VisitorController.dir = -1`). Everything is calm: no hazards, no Demon, warm steady lamps and a few warm notes. The only obstacles are ordinary debris (a log, a stone, a branch), which trip her if she runs into them. Her friends wave and call. |
+| `FINAL_RUN` | She runs for her friends on her own, about 70 m (no dodging, no tapping). The park is calm: no hazards, no Demon, warm steady lamps, a few warm notes. Her friends wave and call. |
 | `FINAL_UNEASE` | Odette stops waving and keeps smiling, Juno's head turns too far, and Wren goes still. Their shadows run up the path toward her from a light that isn't there: one with horns, one with extra arms, one a beat behind. The music goes, then the wind. All three turn to her at once, the camera lowers, and her legs slow. |
 | `FRIENDS_REVEAL` | Directed, not playable. **Odette:** the smile keeps widening, her eyes sink, her neck lengthens, her fingers and arms grow, and she twists and rises. **Juno:** one step toward the Visitor, then a stop. A shoulder goes up and over, an elbow bends the wrong way, and her spine arches and folds while her face stays fixed on the Visitor. With four eyes and a long face, she unfolds tall. **Wren:** the most ordinary of the three. A slow step, a tilt, then her head keeps turning to show a second face. Her neck grows, and black limbs come out of her back. |
 | `VISITOR_REALIZATION` | The phone in Odette's hand shows the same dating-app conversation. The Visitor looks from one friend to the next, her face moving through confusion, recognition, disbelief and terror, and she takes a step back. The camera finds the house far behind her, warm in every window. She turns toward it. |
@@ -296,6 +296,13 @@ src/
 - **All textures and sounds are generated at runtime.** There are no asset files, and no voice acting: the Demon "speaks" in engraved text.
 - **Puddles use `MeshPhongMaterial`, deliberately.** It samples the equirect night panorama directly. `MeshStandardMaterial` would trigger Three.js's PMREM prefilter, whose shader produced an (harmless) HLSL precision warning on Windows/ANGLE and a compile stall mid-chase. All hazard shaders are also precompiled at load (`DemonAbilitySystem.prewarm`).
 - **Performance:** about 150–160 fps at 1600×900 on an RTX 4060 laptop GPU. On an integrated Intel GPU, expect much less; dynamic resolution compensates. On dual-GPU laptops, set the browser to *High performance* in Windows Graphics settings.
+
+## Stage 6 changes
+
+- The chase is shorter (the hill follows the trees; the slide ends at x 412) and runs for the park's lit exit gate. The house is sunk out of sight until the slide, then rises where the exit was.
+- Inside, vines grow across the front door when she tries it.
+- The final run is automatic and about 8 s; the landing and reveal play faster.
+- Textures are uploaded at load (the cut outside the window used to stall).
 
 ## Known Stage 5 problems (for Stage 6)
 

@@ -32,7 +32,11 @@ export class CourseDirector {
 
     const pav = this.env.pavement;
     if (v.x > COURSE.pavementStart - 20) pav.beginRise();
-    if (v.x > COURSE.hillCrest - 26) pav.beginSlide();
+    if (v.x > COURSE.hillCrest - 26) {
+      pav.beginSlide();
+      // Where the exit was, the house comes up out of the ground: the path has led her round.
+      this.env.house.rise = 1;
+    }
     if (v.mode === 'run' && v.x > COURSE.hillCrest - 1.5 && pav.slide > 0.45) v.startSlide();
   }
 }

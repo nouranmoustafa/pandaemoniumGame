@@ -67,6 +67,12 @@ export class House {
   /** 0..1 — how far the front door has opened (ending sequence). */
   doorOpen = 0;
   private doorPivot = new THREE.Group();
+  /**
+   * 0 = sunk out of sight, 1 = standing. During the chase she runs for the park's exit;
+   * the house only rises out of the ground at the end of the slide, where the exit was.
+   */
+  rise = 1;
+  private riseNow = 1;
   /** Stage 5: 0 = shut, 1 = open — the window she climbs out of. */
   escapeOpen = 0;
   /** Stage 5: the vine that follows her out of the window, and the ones that keep the door. */
@@ -323,8 +329,28 @@ export class House {
     }
   }
 
+  /** Jump straight to the current rise (resets, skips, the house sequence). */
+  snapRise(): void {
+    this.riseNow = this.rise;
+    this.applyRise();
+  }
+
+  get risen(): number {
+    return this.riseNow;
+  }
+
+  private applyRise(): void {
+    const k = this.riseNow;
+    this.group.visible = k > 0.005;
+    this.group.position.y = -(1 - k * k * (3 - 2 * k)) * 44;
+  }
+
   update(dt: number): void {
     this.time += dt;
+    if (this.riseNow !== this.rise) {
+      this.riseNow += Math.sign(this.rise - this.riseNow) * Math.min(Math.abs(this.rise - this.riseNow), dt * 0.32);
+      this.applyRise();
+    }
     for (const w of this.windows) {
       const flicker = 0.85 + 0.15 * Math.sin(this.time * 7 + w.phase) * Math.sin(this.time * 2.3 + w.phase * 2);
       const mat = w.mesh.material as THREE.MeshBasicMaterial;

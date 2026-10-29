@@ -7,9 +7,9 @@ import type { ObstacleSpec } from '../../obstacles/ObstacleManager';
  *   0–40     settle in, learn the controls
  *   40–115   the grass wakes up (tutorial)
  *   126–166  the false shortcut — deliberately empty
- *   168–215  the trees join in
- *   222–292  the pavement rises into a hill
- *   292–540  the hill folds into a slide toward the house
+ *   168–200  the trees join in
+ *   185–245  the pavement rises into a hill
+ *   245–412  the hill folds into a slide — and the house rises at the end of it
  */
 export const PARK_COURSE: ObstacleSpec[] = [
   // Grass — singles, then a pair that forces a specific lane.
@@ -22,20 +22,15 @@ export const PARK_COURSE: ObstacleSpec[] = [
   // Trees.
   { type: 'branch', x: 172, style: 'sweep', lanes: [0, 1] },
   { type: 'branch', x: 188, style: 'drop', lanes: [2] },
-  { type: 'branch', x: 205, style: 'sweep', lanes: [0] },
-  { type: 'grass', x: 205, lane: 2 },
 
   // On the rising hill.
-  { type: 'grass', x: 250, lane: 1 },
-  { type: 'branch', x: 280, style: 'drop', lanes: [2] },
+  { type: 'grass', x: 205, lane: 1 },
+  { type: 'branch', x: 228, style: 'drop', lanes: [2] },
 
   // The slide.
-  { type: 'branch', x: 334, style: 'drop', lanes: [1] },
-  { type: 'branch', x: 384, style: 'sweep', lanes: [0, 1] },
-  { type: 'branch', x: 412, style: 'drop', lanes: [0] },
-  { type: 'branch', x: 456, style: 'drop', lanes: [2] },
-  { type: 'branch', x: 482, style: 'sweep', lanes: [0] },
-  { type: 'grass', x: 506, lane: 1 },
+  { type: 'branch', x: 290, style: 'drop', lanes: [1] },
+  { type: 'branch', x: 330, style: 'sweep', lanes: [0, 1] },
+  { type: 'branch', x: 368, style: 'drop', lanes: [2] },
 ];
 
 /** Where the false shortcut opens and closes. */

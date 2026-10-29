@@ -46,12 +46,12 @@ export const SLIDE = {
 /** Course layout (X positions). */
 export const COURSE = {
   start: 0,
-  pavementStart: 222,
-  hillCrest: 292,
-  pavementEnd: 548,
-  finish: 540,
+  pavementStart: 185,
+  hillCrest: 245,
+  pavementEnd: 420,
+  finish: 412,
   /** The house stands right where the slide ends (Stage 4: she goes in). */
-  houseX: 578,
+  houseX: 450,
   houseZ: -6,
 };
 

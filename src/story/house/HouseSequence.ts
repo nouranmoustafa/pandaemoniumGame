@@ -12,6 +12,7 @@ import type { Environment } from '../../world/Environment';
 import { HOUSE_FLOOR, HOUSE_FRONT } from '../../world/House';
 import { HouseInterior, ROOM } from '../../world/HouseInterior';
 import { Ribbon } from '../../world/Ribbon';
+import { Vine, vineMaterial } from '../../world/Vine';
 
 export type HouseBeat = 'HOUSE_THRESHOLD' | 'HOUSE_INTERIOR' | 'WEDDING_DRESS';
 type Phase = 'off' | 'threshold' | 'interior' | 'dress' | 'done';
@@ -84,6 +85,9 @@ export class HouseSequence {
   onBeat: (b: HouseBeat) => void = () => {};
   onComplete: () => void = () => {};
   private ribbons: Ribbon[] = [];
+  /** Vines that grow across the inside of the front door when she tries it. */
+  private doorVines: Vine[] = [];
+  private doorSeal = 0;
   /** Per ribbon: when it starts to reach for her on the current clock (-1 = not yet). */
   private reachAt = [-1, -1, -1];
   private spiral = 0;
@@ -120,6 +124,15 @@ export class HouseSequence {
       this.ribbons.push(r);
     }
     this.dress = new WeddingDress(visitor.character, scene);
+    const vm = vineMaterial();
+    for (let k = 0; k < 5; k++) {
+      const v = new Vine(vm, 0.045 + (k % 2) * 0.015, 32, 7, 6);
+      const y = 0.4 + k * 0.62;
+      const p = (x: number, yy: number, z: number) => this.interior.toWorld(x, yy, z);
+      v.setPath([p(0.16, y - 0.3, -1.35), p(0.24, y + 0.2, -0.5), p(0.2, y - 0.15, 0.4), p(0.16, y + 0.25, 1.35)]);
+      scene.add(v.mesh);
+      this.doorVines.push(v);
+    }
     const pave = env.pavement;
     this.porch = {
       heightAt: (x, z) => lerp(pave.heightAt(x, z), HOUSE_FLOOR, smoothstep(DOOR.x - 5.0, DOOR.x - 4.0, x)),
@@ -178,6 +191,8 @@ export class HouseSequence {
   /** The door opens. She has stopped in front of the house (the chase's arrival). */
   start(cameraFrom: ShotFrame): void {
     this.reset();
+    this.env.house.rise = 1;
+    this.env.house.snapRise();
     this.phase = 'threshold';
     this.visitor.useGeneratedBody(true);
     const c = this.visitor.controller;
@@ -207,6 +222,11 @@ export class HouseSequence {
       r.mesh.visible = false;
     }
     this.dress.reset();
+    this.doorSeal = 0;
+    for (const v of this.doorVines) {
+      v.extent = 0;
+      v.update();
+    }
     this.interior.reset();
     this.interior.visible = false;
     this.env.setIndoors(false);
@@ -371,6 +391,12 @@ export class HouseSequence {
 
   private updateInterior(dt: number): void {
     this.interior.doorShut = smoothstep(0.12, 0.38, this.time);
+    // As she tries the handle, the door grows shut.
+    this.doorSeal = smoothstep(3.3, 5.2, this.time);
+    this.doorVines.forEach((v, k) => {
+      v.extent = smoothstep(k * 0.12, 0.5 + k * 0.12, this.doorSeal);
+      v.update(this.time);
+    });
     this.resist();
     this.drive(dt, this.floor);
     if (this.pulling && this.visitor.controller.x >= this.interior.toWorld(ROOM.altarX, 0, 0).x) this.beginDress();

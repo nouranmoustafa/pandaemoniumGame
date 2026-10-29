@@ -286,7 +286,11 @@ export class ParkChapter implements Chapter {
     for (const f of this.prologue.friends) f.char.object.visible = true;
     // Debug skip-ahead into the hill: bring the set-piece up instantly.
     if (this.startX > COURSE.pavementStart - 20) this.env.pavement.beginRise();
-    if (this.startX > COURSE.hillCrest - 26) this.env.pavement.beginSlide();
+    if (this.startX > COURSE.hillCrest - 26) {
+      this.env.pavement.beginSlide();
+      this.env.house.rise = 1;
+      this.env.house.snapRise();
+    }
     this.s.ui.showHint(false);
     this.s.ui.clearSubtitle();
     this.s.camera.snap(this.cameraSubject());

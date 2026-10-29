@@ -9,7 +9,7 @@ import { Particles } from './Particles';
 import { Pavement } from './Pavement';
 import { Sky } from './Sky';
 import { Streetlights } from './Streetlights';
-import { bark, groundGrass } from './Textures';
+import { bark, glowTexture, groundGrass } from './Textures';
 import { buildTreeGeometry } from './TreeBuilder';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -21,6 +21,8 @@ export class Environment {
   readonly group = new THREE.Group();
   readonly pavement: Pavement;
   readonly house: House;
+  /** What she runs for in the chase (see House.rise). */
+  readonly exitGate: THREE.Group;
   readonly sky: Sky;
   readonly particles: Particles;
   readonly moonLight: THREE.DirectionalLight;
@@ -217,6 +219,33 @@ export class Environment {
     this.house = new House();
     this.house.group.position.set(COURSE.houseX, 0, COURSE.houseZ);
     this.group.add(this.house.group);
+    // The way out she is running for: an open park gate between two lamps. At the end of
+    // the slide it sinks, and the house rises where it stood.
+    this.exitGate = new THREE.Group();
+    {
+      const iron = new THREE.MeshStandardMaterial({ color: 0x15121a, roughness: 0.6, metalness: 0.4, fog: false });
+      const stone = new THREE.MeshStandardMaterial({ color: 0x4a4650, roughness: 0.9, fog: false });
+      for (const z of [-5.2, 5.2]) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 5.5, 1.2), stone);
+        pillar.position.set(0, 2.75, z);
+        this.exitGate.add(pillar);
+        const lamp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('rgba(255,210,150,1)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+        lamp.position.set(-0.4, 6.2, z);
+        lamp.scale.setScalar(4);
+        this.exitGate.add(lamp);
+      }
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(5.2, 0.12, 6, 32, Math.PI), iron);
+      arch.rotation.y = Math.PI / 2;
+      arch.position.set(0, 5.4, 0);
+      this.exitGate.add(arch);
+      // The town's lights, just beyond it.
+      const beyond = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture('rgba(255,190,120,0.55)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+      beyond.position.set(25, 8, 0);
+      beyond.scale.set(70, 26, 1);
+      this.exitGate.add(beyond);
+    }
+    this.exitGate.position.set(COURSE.houseX - 12, 0, COURSE.houseZ * 0.5);
+    this.group.add(this.exitGate);
 
     this.entrance = new ParkEntrance();
     this.group.add(this.entrance.group);
@@ -274,6 +303,8 @@ export class Environment {
     this.peace = this.peaceTarget = 0;
     this.anxiety = 0;
     this.house.flare = 0;
+    this.house.rise = 0;
+    this.house.snapRise();
     this.calm = 0;
     this.lightOverride = null;
     this.lamps.reset();
@@ -293,6 +324,9 @@ export class Environment {
     this.lamps.update(dt, focus);
     this.house.glow = 1 + this.anxiety * 0.6 + this.peace * 0.3;
     this.house.update(dt);
+    const sunk = this.house.risen;
+    this.exitGate.visible = sunk < 0.99;
+    this.exitGate.position.y = -sunk * 12;
     this.particles.gust = gust;
     this.particles.update(dt, focus.x);
     this.treeUniforms.uTime.value = this.time;

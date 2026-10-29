@@ -69,7 +69,7 @@ const LAWN: Record<FriendId, THREE.Vector3> = {
   wren: new THREE.Vector3(WINDOW.x + 2.5, LAWN_Y, -11.8),
 };
 /** Where the friends wait on the path for the final run (world X), and her stopping distance. */
-export const FRIENDS_X = 382;
+export const FRIENDS_X = COURSE.houseX + HOUSE_FRONT - 11.5 - 70;
 const PATH_Z: Record<FriendId, number> = { odette: -1.85, juno: 0.15, wren: 2.05 };
 const STOP_AT = 9.5;
 /** Where she lands below the escape window (world), and the run's first mark. */
@@ -123,6 +123,10 @@ export class FinaleSequence {
   phase: Phase = 'off';
   /** Clock of the current phase. */
   time = 0;
+
+  private get clockScale(): number {
+    return this.phase === 'landing' ? 1.7 : this.phase === 'reveal' ? 1.5 : 1;
+  }
   wipes = 0;
   stays = 0;
   pulls = 0;
@@ -353,6 +357,8 @@ export class FinaleSequence {
   /** The gown is on and the sheet is off the mirror: she hears laughter outside. */
   start(): void {
     this.reset();
+    this.env.house.rise = 1;
+    this.env.house.snapRise();
     this.visitor.useGeneratedBody(true);
     this.heading = this.visitor.heading;
     this.speed = this.targetSpeed = 0;
@@ -418,7 +424,8 @@ export class FinaleSequence {
 
   /** One frame. Returns the directed shot, or null while the chase camera owns the run. */
   update(dt: number): ShotFrame | null {
-    this.time += dt;
+    // Stage 6 pacing: the landing and the reveal run on a faster clock — the same beats, less waiting.
+    this.time += dt * this.clockScale;
     // A cue may start the next phase (a new clock and new cues): always compare against the live clock.
     while (this.cueIndex < this.cues.length && this.cues[this.cueIndex].at <= this.time) this.cues[this.cueIndex++].run();
     const t = this.time;
@@ -1502,8 +1509,8 @@ export class FinaleSequence {
         { at: 9.6, run: () => ((H.escapeOpen = 0), this.sound('latch', 0.5)) },
         { at: 10.4, run: () => ((H.glow = 0.62), V.express({ concern: 0.55, distress: 0.3 }, 1.5)) },
         { at: 11.6, run: () => (this.targetHeading = -Math.PI / 2) },
-        { at: 12.2, run: () => (V.lookAt(new THREE.Vector3(FRIENDS_X, 1.6, 0), 0.7), V.express({ concern: 0.3, smile: 0.2 }, 1.5), (this.route = 0), this.walkTo(ROUTE[0].x, ROUTE[0].z, 1.5)) },
-        { at: 13.4, run: () => (this.targetSpeed = 2.6) },
+        { at: 12.2, run: () => (V.lookAt(new THREE.Vector3(FRIENDS_X, 1.6, 0), 0.7), V.express({ concern: 0.3, smile: 0.2 }, 1.5), (this.route = 0), this.walkTo(ROUTE[0].x, ROUTE[0].z, 3.5)) },
+        { at: 12.8, run: () => (this.targetSpeed = 5.2) },
       ],
       [
         {
@@ -1583,7 +1590,7 @@ export class FinaleSequence {
     }
     // The vine: out over the sill, down toward her — and stopping short.
     if (this.reachT >= 0) {
-      this.reachT += dt;
+      this.reachT += dt * this.clockScale;
       const sill = new THREE.Vector3(ESCAPE_WINDOW.x, ESCAPE_WINDOW.sillY + 0.05, ESCAPE_WINDOW.z + 0.1);
       const her = this.visitor.eyesWorld(this.tmp).sub(HOUSE_POS);
       her.y -= 0.35;
@@ -1653,7 +1660,10 @@ export class FinaleSequence {
     c.y = this.ground.heightAt(c.x, c.z);
     c.dir = -1;
     c.start();
-    c.speed = snap ? 3 : Math.max(2.6, this.speed);
+    // She runs on her own now: nothing to dodge, nothing to tap.
+    c.controllable = false;
+    c.speed = snap ? 4 : Math.max(4, this.speed);
+    this.path.group.visible = false;
     this.visitor.heading = -Math.PI / 2;
     this.visitor.moodOverride = { smile: 0.25, concern: 0.35, distress: 0.2 };
     this.path.reset();
@@ -1665,8 +1675,8 @@ export class FinaleSequence {
     else cam.beginHandoff(subject, 2.6);
     this.setBeat('FINAL_RUN');
     // The chase's own controls, reminded once.
-    this.s.prompt('UP / DOWN — <span>DODGE</span> &nbsp;·&nbsp; TAP SPACE — <span>RUN</span>');
-    this.runHint = true;
+    this.s.prompt(null);
+    this.runHint = false;
     if (snap) this.s.fade(0, 1.2);
   }
 
@@ -1677,13 +1687,15 @@ export class FinaleSequence {
       this.updateApproachEnd(dt);
       return;
     }
+    // Running hard for them, easing off only when something feels wrong (speedCap, below).
+    c.effort = 0.62;
     v.update(dt, this.s.input, this.ground);
     if (this.runHint && this.time > 4.5) {
       this.runHint = false;
       this.s.prompt(null);
     }
     // Ordinary debris: a log, a stone, a fallen branch. Nothing moves.
-    if (this.path.hit(c.x, c.lane) && c.stumbleTime < 0) {
+    if (this.path.group.visible && this.path.hit(c.x, c.lane) && c.stumbleTime < 0) {
       c.stumbleTime = 0;
       c.stumbleSide = c.z > 0 ? 'R' : 'L';
       c.speed *= 0.5;
@@ -1697,31 +1709,31 @@ export class FinaleSequence {
     const st = (id: FriendId) => this.friends.get(id)!;
     const cor = (id: FriendId) => this.corruption.get(id)!;
     // --- Relief: the path is just a path. Her friends wave. The music is kind. ---
-    this.hope = damp(this.hope, d > 40 ? 1 : 0, d > 40 ? 0.6 : 0.35, dt);
-    this.hush = damp(this.hush, d < 45 ? 1 : 0, 0.5, dt);
+    this.hope = damp(this.hope, d > 34 ? 1 : 0, d > 34 ? 1.2 : 0.5, dt);
+    this.hush = damp(this.hush, d < 32 ? 1 : 0, 0.8, dt);
     const tired = smoothstep(0, 6, this.time);
-    v.moodOverride = d > 105 ? { smile: 0.2 + 0.25 * tired, concern: 0.35 - 0.2 * tired, determined: c.effort * 0.5, distress: 0.2 * (1 - tired) } : v.moodOverride;
+    v.moodOverride = d > 58 ? { smile: 0.2 + 0.25 * tired, concern: 0.35 - 0.2 * tired, determined: c.effort * 0.5, distress: 0.2 * (1 - tired) } : v.moodOverride;
     v.gazeOverride = this.tmp2.set(FRIENDS_X, 1.6, PATH_Z.juno);
-    if (d < 132 && d + c.speed * dt >= 132) {
+    if (d < 66 && d + c.speed * dt >= 66) {
       this.sound('call');
       this.friendChar('juno').perf.play('beckon', 1);
     }
     // --- Unease: one stops waving, one turns her head too far, one is too still. ---
-    if (d < 105) {
+    if (d < 58) {
       this.setBeat('FINAL_UNEASE');
-      const k = smoothstep(105, 80, d);
+      const k = smoothstep(58, 44, d);
       this.unease = Math.max(this.unease, k);
       st('odette').waving = false;
       this.friendChar('odette').perf.stare = true;
       this.friendChar('odette').perf.express({ smile: 0.6 }, 2);
-      cor('juno').p.headTurn = smoothstep(100, 82, d) * 1.15;
-      cor('juno').p.tilt = smoothstep(100, 82, d) * 0.3;
+      cor('juno').p.headTurn = smoothstep(55, 42, d) * 1.15;
+      cor('juno').p.tilt = smoothstep(55, 42, d) * 0.3;
       st('wren').waving = false;
-      st('wren').frozen = d < 98;
+      st('wren').frozen = d < 52;
       v.moodOverride = { smile: lerp(0.4, 0.15, k), concern: lerp(0.2, 0.45, k), determined: c.effort * 0.4 };
     }
     // --- Their shadows are wrong. ---
-    this.shadowK = smoothstep(80, 50, d);
+    this.shadowK = smoothstep(48, 30, d);
     if (this.shadowK > 0) {
       const tw = this.prologue.twin;
       if (!tw.object.visible) tw.setActive(true);
@@ -1736,7 +1748,7 @@ export class FinaleSequence {
       };
     }
     // --- The music goes, the wind goes; they turn to her all at once. ---
-    if (d < 44 && !this.sync) {
+    if (d < 28 && !this.sync) {
       this.sync = true;
       for (const [id, s2] of this.friends) {
         s2.waving = false;
@@ -1755,14 +1767,14 @@ export class FinaleSequence {
     }
     if (this.sync) {
       for (const id of this.friends.keys()) this.friendChar(id).perf.lookAt(vEyes, 1);
-      this.s.camera.menace = smoothstep(44, 16, d);
-      const k = smoothstep(42, 14, d);
+      this.s.camera.menace = smoothstep(28, 13, d);
+      const k = smoothstep(27, 12, d);
       v.moodOverride = { concern: lerp(0.4, 0.85, k), fear: k * 0.35, smile: lerp(0.15, 0, k), surprise: k * 0.2 };
       // She slows: the player still runs her, but her legs will not hurry toward them.
-      c.speedCap = lerp(12.5, 1.6, smoothstep(40, 13, d));
+      c.speedCap = lerp(12.5, 1.6, smoothstep(26, 12, d));
     }
-    this.s.effort(c.effort, false, c.controllable && d > 30);
-    if (d < STOP_AT + 4 && c.controllable) {
+    this.s.effort(0, false, false);
+    if (d < STOP_AT + 4 && this.revealAt < 0) {
       c.controllable = false;
       c.speedCap = 0;
       this.revealAt = 0;
