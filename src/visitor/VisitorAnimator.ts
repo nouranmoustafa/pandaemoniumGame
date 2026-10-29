@@ -76,7 +76,7 @@ export class VisitorAnimator {
     const moving = smoothstep(0.08, 0.6, a.speed) * (1 - a.slide);
     // Below a jog she walks; both gaits share one phase so the change is seamless.
     const runW = smoothstep(2.3, 3.8, a.speed);
-    const runCycle = lerp(2.2, 6.4, smoothstep(0, RUN.sprintSpeed, a.speed));
+    const runCycle = lerp(2.2, 7.4, smoothstep(0, RUN.sprintSpeed, a.speed));
     const cycleLength = lerp(this.walkCycleLength(a.speed), runCycle, runW);
     if (a.slide < 0.95) this.phase += (a.speed / cycleLength) * TAU * dt;
     this.detectSteps(moving);

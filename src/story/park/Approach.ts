@@ -153,17 +153,17 @@ export class Approach {
     // Phone cues are queued when she arrives (see update).
     this.arrivalCues = [
       { at: 0.1, run: () => (sound('buzz'), P.setPhone(1), P.express({ concern: 0.3, surprise: 0.2 }, 3)) },
-      // Her phone, held up to us: the same app. The invitation arrives at ~2.8 s and stays readable.
-      { at: 1.0, run: () => this.say.phone(this.app.screen) },
-      { at: 1.4, run: () => sound('notify') },
-      { at: 6.4, run: () => this.say.phone(null) },
+      // Her phone, held up to us: the same app. The invitation arrives at ~1.8 s and stays readable ~3.6 s.
+      { at: 0.6, run: () => this.say.phone(this.app.screen) },
+      { at: 0.9, run: () => sound('notify') },
+      { at: 5.4, run: () => this.say.phone(null) },
       // Eerie: the lamps stutter, the windows flare, the door eases open, the wind turns.
-      { at: 6.6, run: () => (this.env.lamps.stutter(STOP_X - 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
-      { at: 7.0, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
-      { at: 7.9, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
+      { at: 5.5, run: () => (this.env.lamps.stutter(STOP_X - 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
+      { at: 5.8, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
+      { at: 6.3, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
       // She will not go in. She turns her back on it.
-      { at: 8.6, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
-      { at: 9.7, run: () => this.beginFlee() },
+      { at: 6.8, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
+      { at: 7.5, run: () => this.beginFlee() },
     ];
   }
 
@@ -180,7 +180,7 @@ export class Approach {
     const c = this.visitor.controller;
     c.dir = -1;
     c.start();
-    c.speed = 2.5;
+    c.speed = 4.5;
     this.visitor.heading = this.heading;
     this.visitor.setFirstPerson(true);
     this.camera.fpv = true;
@@ -218,7 +218,7 @@ export class Approach {
         this.cueIndex = 0;
         this.director.setShots(this.walkShots(t));
       }
-      this.walkSpeed = damp(this.walkSpeed, this.phase === 'walk' ? 1.9 : 0, this.phase === 'walk' ? 1.5 : 3, dt);
+      this.walkSpeed = damp(this.walkSpeed, this.phase === 'walk' ? 2.6 : 0, this.phase === 'walk' ? 2.2 : 3.5, dt);
       this.heading += clamp(this.targetHeading - this.heading, -2.6 * dt, 2.6 * dt);
       const z = damp(c.z, 0, 1.2, dt);
       v.place(c.x + Math.sin(this.heading) * this.walkSpeed * dt * (this.phase === 'walk' ? 1 : 0), z, this.heading, this.env.pavement);
@@ -226,7 +226,7 @@ export class Approach {
       if (this.phase === 'phone') {
         // The app: her date writes again — the invitation.
         const a = t - this.arriveAt;
-        this.app.update(APP_BEATS.sent + 0.8 + clamp(a - 0.6, 0, 6) * (APP_BEATS.inviteMsg - APP_BEATS.sent) / 2.2);
+        this.app.update(APP_BEATS.sent + 0.8 + clamp(a - 0.4, 0, 6) * (APP_BEATS.inviteMsg - APP_BEATS.sent) / 1.4);
         if (P(v).phone > 0.3) v.aimPhone(v.eyesWorld(this.tmp), 1);
       }
       return this.director.update(t, dt);
@@ -242,11 +242,11 @@ export class Approach {
       const since = this.time - this.loopAt;
       // The ramp settles back; the house stands ahead of her — then sinks, and the park opens again.
       if (since > 1.0) this.rampTarget = 0;
-      if (since > 1.8 && this.env.house.rise === 1) {
+      if (since > 1.4 && this.env.house.rise === 1) {
         this.env.house.riseRate = 0.8;
         this.env.house.rise = 0;
       }
-      if (since > 4.2) {
+      if (since > 3.2) {
         this.say.hint(false);
         this.env.setGust(0);
         this.placeFinalHouse();
@@ -276,7 +276,7 @@ export class Approach {
         this.phase = 'turn';
         this.arcA = 0;
         this.arcZ0 = c.z + ARC_R;
-        this.arcSpeed = Math.min(3.0, Math.max(2.4, c.speed));
+        this.arcSpeed = Math.min(3.6, Math.max(3.0, c.speed));
         c.controllable = false;
       }
     }
@@ -294,7 +294,7 @@ export class Approach {
   private updateTurn(dt: number): void {
     const v = this.visitor;
     const c = v.controller;
-    this.arcSpeed = damp(this.arcSpeed, 2.1, 1.5, dt);
+    this.arcSpeed = damp(this.arcSpeed, 2.7, 1.5, dt);
     this.arcA = Math.min(Math.PI, this.arcA + (this.arcSpeed / ARC_R) * dt);
     const a = this.arcA;
     this.arcY = arcH(a, ARC_R) + this.ramp.position.y;
@@ -310,7 +310,7 @@ export class Approach {
       c.dir = 1;
       c.mode = 'run';
       c.lane = 2;
-      c.speed = 3.2;
+      c.speed = 4.5;
       c.controllable = true;
       v.heading = Math.PI / 2;
       this.camera.dir = 1;

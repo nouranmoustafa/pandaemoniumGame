@@ -25,6 +25,12 @@ type Phase = 'off' | 'window' | 'wipe' | 'return' | 'choice' | 'stay' | 'escape'
 type FriendId = Exclude<CharacterId, 'visitor'>;
 export type FinaleJump = 'window' | 'choice' | 'run' | 'reveal';
 
+/** Stage 6 pacing: cue clocks that run faster than real time (the same beats, less waiting). */
+const CLOCK: Partial<Record<Phase, number>> = { window: 1.4, return: 1.3, stay: 1.3, escape: 1.25, landing: 2.0, reveal: 1.6 };
+/** 1v1, the Visitor's ending: her date's last message, on black. */
+const WARN_SHOW = 0.5;
+const WARN_HIDE = 5.8;
+
 export interface FinaleServices {
   bus: EventBus;
   input: Input;
@@ -36,6 +42,8 @@ export interface FinaleServices {
   /** The last line, over the closing shot (null hides it). */
   caption: (text: string | null) => void;
   effort: (v: number, tapped: boolean, visible: boolean) => void;
+  /** The dating app held up to the player (null hides it); `over` puts it above the black. */
+  phone: (screen: HTMLCanvasElement | null, over?: boolean) => void;
 }
 
 interface Cue {
@@ -125,8 +133,10 @@ export class FinaleSequence {
   time = 0;
 
   private get clockScale(): number {
-    return this.phase === 'landing' ? 1.7 : this.phase === 'reveal' ? 1.5 : 1;
+    return CLOCK[this.phase] ?? 1;
   }
+  /** 1v1: the Visitor won the chase and never went inside (see beginVictoryRun). */
+  victory = false;
   wipes = 0;
   stays = 0;
   pulls = 0;
@@ -306,6 +316,7 @@ export class FinaleSequence {
   reset(): void {
     this.phase = 'off';
     this.time = 0;
+    this.victory = false;
     this.beat = null;
     this.cues = [];
     this.cueIndex = 0;
@@ -352,6 +363,32 @@ export class FinaleSequence {
     this.s.prompt(null);
     this.s.choice(null, 0);
     this.s.caption(null);
+    this.s.phone(null);
+  }
+
+  /**
+   * 1v1, the Visitor wins: the house never gets her inside. Straight from the chase onto the
+   * path home, in her own clothes, with nothing left to dodge, running for her friends.
+   * The same reveal follows, then her date's last message. The caller fades around this.
+   */
+  beginVictoryRun(): void {
+    this.reset();
+    this.victory = true;
+    const H = this.env.house;
+    H.group.position.set(COURSE.houseX, H.group.position.y, COURSE.houseZ);
+    H.rise = 1;
+    H.snapRise();
+    H.glow = 0.62;
+    this.outdoors = true;
+    this.env.setIndoors(false);
+    this.interior.visible = false;
+    this.placeFriendsOnPath();
+    this.env.pavement.reset();
+    this.env.calm = 1;
+    this.visitor.place(RUN_FROM, 0, -Math.PI / 2, this.ground);
+    this.beginRun(true);
+    // Urgent from the first frame: she is already running when the picture comes back.
+    this.visitor.controller.speed = 9;
   }
 
   /** The gown is on and the sheet is off the mirror: she hears laughter outside. */
@@ -408,7 +445,9 @@ export class FinaleSequence {
    * caller fades around this.
    */
   skip(): void {
-    if (this.phase === 'reveal' || this.phase === 'black') this.beginEnding(true);
+    if (this.victory && this.phase === 'reveal') this.beginBlack();
+    else if (this.victory && this.phase === 'black') this.finish();
+    else if (this.phase === 'reveal' || this.phase === 'black') this.beginEnding(true);
     else if (this.phase === 'ending') this.finish();
     else if (this.phase !== 'run') this.beginRun(true);
   }
@@ -417,6 +456,7 @@ export class FinaleSequence {
     if (this.phase === 'done') return;
     this.phase = 'done';
     this.s.caption(null);
+    this.s.phone(null);
     this.s.fade(1, 0.6);
     this.onComplete();
   }
@@ -762,7 +802,7 @@ export class FinaleSequence {
       { at: 0.0, run: () => (this.sound('laughFar'), this.friendChar('juno').perf.play('laugh'), this.friendChar('odette').perf.play('arms', 1, 30)) },
       { at: 0.3, run: () => (V.lookAt(I.toWorld(WINDOW.x, 1.8, -4.2), 0.8), V.express({ concern: 0.5, surprise: 0.4 }, 3)) },
       { at: 0.9, run: () => (this.targetHeading = Math.atan2(STAND.x - ROOM.altarX, STAND.z)) },
-      { at: 1.5, run: () => this.walkTo(STAND.x, STAND.z, 0.95) },
+      { at: 1.5, run: () => this.walkTo(STAND.x, STAND.z, 1.35) },
       { at: 2.6, run: () => this.sound('laughFar', 0.7) },
       // She sees who it is.
       { at: 4.6, run: () => (V.lookAt(juno(), 0.9), V.express({ smile: 0.55, surprise: 0.3, concern: 0.25 }, 2.5), (V.nervous = 0.2)) },
@@ -1689,7 +1729,8 @@ export class FinaleSequence {
       return;
     }
     // Running hard for them, easing off only when something feels wrong (speedCap, below).
-    c.effort = 0.62;
+    // After a won chase she runs flat out: she thinks she is free.
+    c.effort = this.victory ? 0.85 : 0.62;
     v.update(dt, this.s.input, this.ground);
     if (this.runHint && this.time > 4.5) {
       this.runHint = false;
@@ -2154,11 +2195,22 @@ export class FinaleSequence {
     this.s.fade(1, 0);
     this.phase = 'black';
     this.time = 0;
-    this.cues = [{ at: 2.4, run: () => this.beginEnding(false) }];
     this.cueIndex = 0;
     this.hush = 1;
     this.sound('cut');
     this.setBeat('FINAL_ENDING');
+    if (!this.victory) {
+      this.cues = [{ at: 1.5, run: () => this.beginEnding(false) }];
+      return;
+    }
+    // The Visitor's ending: no house, no closing shot. Her phone lights up in the dark.
+    const app = this.prologue.app;
+    this.cues = [
+      { at: WARN_SHOW, run: () => (app.update(APP_BEATS.warn - 0.7), this.s.phone(app.screen, true)) },
+      { at: WARN_SHOW + 0.7 + (APP_BEATS.warnMsg - APP_BEATS.warn), run: () => this.sound('call', 0.3) },
+      { at: WARN_HIDE, run: () => this.s.phone(null) },
+      { at: WARN_HIDE + 0.9, run: () => this.finish() },
+    ];
   }
 
   /** The house, alone under the moon. The path is empty. */
@@ -2202,20 +2254,20 @@ export class FinaleSequence {
     reach.setPath(pts);
     reach.extent = 0;
     this.setCues([
-      { at: 0.0, run: () => this.s.fade(0, fromSkip ? 1.2 : 3.0) },
-      { at: 2.4, run: () => this.sound('sigh', 0.25) },
-      { at: 8.6, run: () => this.sound('sigh', 0.6) },
-      { at: 10.0, run: () => this.s.fade(0.62, 2.4) },
-      { at: 11.2, run: () => this.s.caption('IT WAS NEVER THE HOUSE YOU SHOULD HAVE FEARED.') },
-      { at: 17.0, run: () => (this.s.caption(null), this.s.fade(1, 2.2)) },
-      { at: 20.6, run: () => this.finish() },
+      { at: 0.0, run: () => this.s.fade(0, fromSkip ? 1.2 : 2.2) },
+      { at: 1.8, run: () => this.sound('sigh', 0.25) },
+      { at: 6.0, run: () => this.sound('sigh', 0.6) },
+      { at: 6.8, run: () => this.s.fade(0.62, 1.8) },
+      { at: 7.4, run: () => this.s.caption('IT WAS NEVER THE HOUSE YOU SHOULD HAVE FEARED.') },
+      { at: 11.6, run: () => (this.s.caption(null), this.s.fade(1, 1.8)) },
+      { at: 13.8, run: () => this.finish() },
     ]);
     const shot: Shot = {
       name: 'house-alone',
       start: 0,
       blend: 0,
       frame: (t, o) => {
-        const k = smoothstep(0, 16, t);
+        const k = smoothstep(0, 12, t);
         o.pos.set(COURSE.houseX - 64 + k * 11, 1.7 - k * 0.4, 5.5 - k * 0.8);
         o.look.set(COURSE.houseX - 4, 11.5, COURSE.houseZ - 1);
         o.fov = 40;
@@ -2229,11 +2281,12 @@ export class FinaleSequence {
   }
 
   private updateEnding(dt: number): void {
+    if (this.phase === 'black' && this.victory && this.time >= WARN_SHOW) this.prologue.app.update(APP_BEATS.warn - 0.7 + (this.time - WARN_SHOW));
     if (this.phase !== 'ending') return;
     const t = this.time;
     const reach = this.env.house.doorReach;
     // From under the door, along the porch toward the path. It stops. It hesitates. It stays.
-    reach.extent = smoothstep(3.0, 8.2, t) * 0.62 + (t > 8.2 && t < 9.4 ? Math.sin((t - 8.2) * Math.PI / 1.2) * 0.015 : 0);
+    reach.extent = smoothstep(2.0, 6.0, t) * 0.62 + (t > 6.0 && t < 7.2 ? Math.sin((t - 6.0) * Math.PI / 1.2) * 0.015 : 0);
     void dt;
   }
 

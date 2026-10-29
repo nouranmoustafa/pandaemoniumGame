@@ -62,8 +62,10 @@ export class Game {
   private opts: GameOptions;
   /** Frames rendered — exposed for automated smoke tests. */
   frames = 0;
-  private readonly maxPixelRatio = Math.min(window.devicePixelRatio, 1.75);
-  private pixelRatio = this.maxPixelRatio;
+  /** Integrated / software GPUs get a lighter lighting setup (see applyLowQuality). */
+  readonly lowGpu: boolean;
+  private readonly maxPixelRatio: number;
+  private pixelRatio: number;
   private frameTimeAvg = 1 / 60;
   private qualityTimer = 0;
   private qualityAge = 0;
@@ -72,6 +74,9 @@ export class Game {
   constructor(container: HTMLElement, opts: GameOptions = {}) {
     this.opts = opts;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.lowGpu = Game.detectLowGpu(this.renderer);
+    this.maxPixelRatio = Math.min(window.devicePixelRatio, this.lowGpu ? 1.25 : 1.75);
+    this.pixelRatio = this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
@@ -100,6 +105,8 @@ export class Game {
       { startX: opts.startX },
     );
     this.post = new PostFX(this.renderer, this.scene, this.camera.camera);
+    // Before the warm-up below, so every shader is compiled once, for the lights it will keep.
+    if (this.lowGpu) this.applyLowQuality();
     // Warm the Demon's shaders now rather than mid-chase, and the house's so
     // Stage 4 doesn't stall at the door. Compiled against the composer's
     // target: the scene is drawn there (linear, untonemapped), not to the screen.
@@ -152,6 +159,30 @@ export class Game {
     this.states.go('title');
     this.ui.setFade(0, 2.2);
     this.renderer.setAnimationLoop(this.loop);
+  }
+
+  /** ?quality=low|high overrides; otherwise integrated, mobile and software renderers count as weak. */
+  private static detectLowGpu(renderer: THREE.WebGLRenderer): boolean {
+    const q = new URLSearchParams(location.search).get('quality');
+    if (q === 'low' || q === 'high') return q === 'low';
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    return /Intel|SwiftShader|llvmpipe|Basic Render|Mali|Adreno|PowerVR|Radeon.TM. Graphics|Radeon Graphics|Vega [0-9]+ Graphics/i.test(name) && !/Intel.*Arc/i.test(name);
+  }
+
+  /**
+   * Measured on an Intel iGPU: the frame is bound by per-pixel lighting, not resolution. Every
+   * point light costs each lit pixel even at zero intensity, and the plaza's key light renders a
+   * second shadow pass. Trim the always-present pools and that pass; the look stays the same.
+   */
+  private applyLowQuality(): void {
+    const env = this.chapter.env;
+    env.lamps.trimPool(2);
+    this.chapter.abilities.trimFireLights(1);
+    env.entrance.faceLight.visible = false;
+    env.entrance.keyLight.castShadow = false;
+    env.moonLight.shadow.mapSize.set(1024, 1024);
   }
 
   private registerFlow(): void {
@@ -395,7 +426,8 @@ export class Game {
     const ms = this.frameTimeAvg * 1000;
     const prev = this.pixelRatio;
     this.fastStreak = ms < 11 ? this.fastStreak + 1 : 0;
-    if (ms > 24) this.pixelRatio = Math.max(0.6, this.pixelRatio - 0.2);
+    // Not below 0.7: lower is blurry and, on the GPUs that get here, barely faster.
+    if (ms > 24) this.pixelRatio = Math.max(0.7, this.pixelRatio - 0.15);
     else if (this.fastStreak >= 5) {
       this.fastStreak = 0;
       this.pixelRatio = Math.min(this.maxPixelRatio, this.pixelRatio + 0.1);

@@ -159,6 +159,11 @@ export class Streetlights {
     }
   }
 
+  /** Weak GPUs: a smaller pool of real lights (each one is paid for on every lit pixel, even at zero). */
+  trimPool(n: number): void {
+    for (const l of this.lights.splice(n)) l.removeFromParent();
+  }
+
   /**
    * Two neighbouring lamps ahead of her lean toward each other, as if
    * discussing her. Returns false if no suitable pair exists.

@@ -203,8 +203,10 @@ export class Prologue {
   }
 
   update(dt: number): ShotFrame {
-    // Stage 6 pacing: every beat is kept, with less waiting between them.
-    this.time += dt * (this.time < 31 ? 1.7 : 1.2);
+    // Stage 6 pacing: every beat is kept, with less waiting between them. The app's messages
+    // keep the gentler rate so they stay readable.
+    const appWindow = this.time >= 15 && this.time < APP_AT + APP_BEATS.end + 1;
+    this.time += dt * (appWindow ? 1.7 : this.time < 31 ? 2.0 : 1.45);
     const t = this.time;
     for (let i = BEATS.length - 1; i >= 0; i--) {
       if (t >= BEATS[i].at) {

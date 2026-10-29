@@ -21,7 +21,25 @@ export const APP_BEATS = {
   /** At the house: the date writes again. */
   invite: 9.2,
   inviteMsg: 10.2,
+  /** 1v1, the Visitor's ending: the date's last message. */
+  warn: 11.4,
+  warnMsg: 12.3,
 };
+
+/**
+ * Stretches during which the screen animates (dots, pops, the pulse, the cursor). Between them it
+ * is still, and is not redrawn: each upload of the canvas to the GPU stalls integrated GPUs.
+ */
+const ANIMATING: Array<[number, number]> = [
+  [APP_BEATS.notify - 0.05, APP_BEATS.message + 0.45],
+  [APP_BEATS.location, APP_BEATS.location + 0.55],
+  [APP_BEATS.replyTyping, APP_BEATS.sent + 0.7],
+  [APP_BEATS.invite, APP_BEATS.inviteMsg + 0.45],
+  [APP_BEATS.warn, APP_BEATS.warnMsg + 0.45],
+];
+const EDGES = ANIMATING.flat();
+/** Index of the still / animating stretch t falls in (odd = animating). */
+const stretch = (t: number) => EDGES.filter((e) => e <= t).length;
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   g.beginPath();
@@ -59,7 +77,10 @@ export class DatingApp {
     this.g = this.canvas.getContext('2d')!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.anisotropy = 8;
+    // Redrawn up to 30 times a second: rebuilding a mip chain on every upload cost ~30 ms a frame
+    // on integrated GPUs. The screen is only ever seen up close, so plain linear filtering will do.
+    this.texture.generateMipmaps = false;
+    this.texture.minFilter = THREE.LinearFilter;
     // Kept just under the bloom threshold: a lit screen, not a lamp.
     this.material = new THREE.MeshBasicMaterial({ map: this.texture, toneMapped: false, color: new THREE.Color(0.78, 0.78, 0.78) });
     this.paintPortrait();
@@ -76,6 +97,8 @@ export class DatingApp {
   update(t: number): void {
     this.t = t;
     if (Math.abs(t - this.lastDrawn) < 1 / 30) return;
+    const s = stretch(t);
+    if (s % 2 === 0 && s === stretch(this.lastDrawn)) return;
     this.draw();
   }
 
@@ -519,6 +542,32 @@ export class DatingApp {
         g.fillText("I'm inside. The door", 32 + 40, iy + 66);
         g.fillText("is open. Come in.", 32 + 40, iy + 122);
         g.globalAlpha = 1;
+      }
+      // Long after: typing again, then the last thing he says.
+      if (t > B.warn) {
+        const wy = iy + 200;
+        if (t < B.warnMsg) {
+          g.fillStyle = '#2e2530';
+          roundRect(g, 40, wy, 150, 76, 38);
+          g.fill();
+          for (let i = 0; i < 3; i++) {
+            g.fillStyle = `rgba(255,255,255,${0.35 + 0.65 * Math.max(0, Math.sin(t * 8 - i * 0.9))})`;
+            g.beginPath();
+            g.arc(80 + i * 30, wy + 38, 9, 0, Math.PI * 2);
+            g.fill();
+          }
+        } else {
+          const k = easeOutBack(clamp((t - B.warnMsg) / 0.4, 0, 1));
+          g.globalAlpha = clamp(k, 0, 1);
+          g.fillStyle = '#2e2530';
+          roundRect(g, 40, wy, 480, 112, 34);
+          g.fill();
+          g.fillStyle = '#fff';
+          g.textAlign = 'left';
+          g.font = `400 42px ${SANS}`;
+          g.fillText('I tried to warn you.', 32 + 40, wy + 70);
+          g.globalAlpha = 1;
+        }
       }
     }
   }

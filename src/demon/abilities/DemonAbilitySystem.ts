@@ -59,6 +59,11 @@ export class DemonAbilitySystem {
     });
   }
 
+  /** Weak GPUs: fewer real fire lights (each one is paid for on every lit pixel, even at zero). */
+  trimFireLights(n: number): void {
+    for (const l of this.fireLights.splice(n)) l.removeFromParent();
+  }
+
   /** Every hazard currently on the course: scripted and summoned. */
   get obstacles(): readonly Obstacle[] {
     this.all.length = 0;

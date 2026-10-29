@@ -5,7 +5,6 @@ import { COURSE } from '../../config';
 import type { EventBus, HouseSound } from '../../core/Events';
 import type { Input } from '../../core/Input';
 import { clamp, damp, lerp, smoothstep } from '../../core/math';
-import { HOUSE_LINES } from '../../demon/DemonVoice';
 import type { Visitor } from '../../visitor/Visitor';
 import type { Ground } from '../../visitor/VisitorController';
 import type { Environment } from '../../world/Environment';
@@ -27,8 +26,11 @@ const REVEAL = [1.2, 7.2] as const;
 const VEIL = [5.6, 8.0] as const;
 /** Stage 5 follows straight on (laughter outside), so the house no longer fades to its end card here. */
 const DRESS_END = 13.4;
-/** Resist counts that earn a remark (see HOUSE_LINES.resist). */
-const RESIST_REMARKS = [1, 2, 3, 5];
+/**
+ * Stage 6 pacing: the house's cue clock runs faster than real time (the same beats, less
+ * waiting); her walking speeds are raised to match, so she still reaches each mark.
+ */
+const CLOCK = { threshold: 1.35, interior: 1.45, dress: 1.4 } as const;
 
 export interface HouseServices {
   bus: EventBus;
@@ -103,7 +105,6 @@ export class HouseSequence {
   private targetHeading: number | null = null;
   private aim: THREE.Vector3 | null = null;
   private pulling = false;
-  private remarkIndex = 0;
   private complete = false;
   private tmp = new THREE.Vector3();
   private tmp2 = new THREE.Vector3();
@@ -219,7 +220,6 @@ export class HouseSequence {
     this.phase = 'off';
     this.time = 0;
     this.resists = 0;
-    this.remarkIndex = 0;
     this.transition = -1;
     this.complete = false;
     this.pulling = false;
@@ -306,7 +306,8 @@ export class HouseSequence {
   // --------------------------------------------------------------- update
 
   update(dt: number): ShotFrame {
-    this.time += dt;
+    // The house never speaks: it answers with doors, candles, ribbons and the mirror.
+    this.time += dt * (this.phase === 'threshold' || this.phase === 'interior' || this.phase === 'dress' ? CLOCK[this.phase] : 1);
     const t = this.time;
     while (this.cueIndex < this.cues.length && this.cues[this.cueIndex].at <= t) this.cues[this.cueIndex++].run();
     if (this.phase === 'threshold') this.updateThreshold(dt);
@@ -327,11 +328,6 @@ export class HouseSequence {
     this.perf.play('resist');
     this.s.shake(0.12);
     this.sound('snap');
-    // At the door the capture speaks for itself; inside, the house keeps count aloud.
-    if (this.phase !== 'threshold' && RESIST_REMARKS[this.remarkIndex] === this.resists) {
-      this.s.say(HOUSE_LINES.resist[this.remarkIndex], 3.4);
-      this.remarkIndex++;
-    }
   }
 
   /** Walk (or be walked) toward `aim` at the current speed; turn toward the target heading. */
@@ -548,7 +544,7 @@ export class HouseSequence {
         run: () => {
           this.pulling = true;
           this.aim = new THREE.Vector3(DOOR.x - 0.2, 0, DOOR.z);
-          this.targetSpeed = 2.4;
+          this.targetSpeed = 3.1;
           V.play('pulled', -1, 600);
           V.lookAt(doorAt, 0.7);
           V.express({ fear: 0.55, distress: 0.5, determined: 0.3 }, 4);
@@ -557,7 +553,7 @@ export class HouseSequence {
       },
       // A last look back at the park.
       { at: 6.2, run: () => V.lookAt(this.tmp.set(this.visitor.position.x - 20, 1.6, this.visitor.position.z + 6).clone(), 1) },
-      { at: 7.4, run: () => (V.lookAt(doorAt, 0.8), (this.targetSpeed = 2.9)) },
+      { at: 7.4, run: () => (V.lookAt(doorAt, 0.8), (this.targetSpeed = 3.6)) },
     ];
   }
 
@@ -569,9 +565,9 @@ export class HouseSequence {
       { at: 0.0, run: () => (V.express({ fear: 0.6, surprise: 0.4 }, 6), (V.nervous = 0.5)) },
       { at: 0.3, run: () => (this.sound('slam'), this.s.shake(0.5), V.play('flinch')) },
       { at: 1.2, run: () => ((this.targetHeading = -Math.PI / 2), V.lookAt(door, 1)) },
-      { at: 2.0, run: () => ((this.aim = I.toWorld(0.62, 0, 0.25)), (this.targetSpeed = 0.9), (this.targetHeading = null)) },
+      { at: 2.0, run: () => ((this.aim = I.toWorld(0.62, 0, 0.25)), (this.targetSpeed = 1.35), (this.targetHeading = null)) },
       { at: 3.0, run: () => ((this.targetHeading = -Math.PI / 2), V.play('tryDoor', -1)) },
-      { at: 3.4, run: () => this.s.say(HOUSE_LINES.locked, 3.4) },
+      { at: 3.4, run: () => this.s.shake(0.12) },
       { at: 3.8, run: () => this.sound('rattle') },
       { at: 5.4, run: () => ((this.targetHeading = Math.PI / 2), V.express({ fear: 0.4, concern: 0.6 }, 3)) },
       ...ROOM.candleXs.map((x, i) => ({
@@ -582,7 +578,6 @@ export class HouseSequence {
           V.lookAt(I.toWorld(x, 1.3, 0), 0.7);
         },
       })),
-      { at: 6.4, run: () => this.s.say(HOUSE_LINES.ceremony, 4.2) },
       { at: 8.6, run: () => (this.sound('organ'), V.lookAt(I.toWorld(ROOM.archX, 1.8, 0), 0.8), V.express({ fear: 0.5, distress: 0.4 }, 3)) },
       ...[0, 1, 2].map((k) => ({ at: AISLE_REACH + k * 0.5, run: () => ((this.reachAt[k] = AISLE_REACH + k * 0.5), this.sound('silk')) })),
       {
@@ -591,13 +586,13 @@ export class HouseSequence {
           this.pulling = true;
           this.aim = I.toWorld(ROOM.altarX + 1, 0, 0);
           this.targetHeading = null;
-          this.targetSpeed = 1.05;
+          this.targetSpeed = 1.55;
           V.play('pulled', -1, 600);
           V.express({ fear: 0.45, distress: 0.55 }, 3);
           this.s.prompt('TAP SPACE — <span>PULL BACK</span>');
         },
       },
-      { at: AISLE_PULL + 5.5, run: () => this.s.say(HOUSE_LINES.noGuests, 3.6) },
+      { at: AISLE_PULL + 5.5, run: () => this.sound('creak') },
     ];
   }
 
@@ -608,18 +603,16 @@ export class HouseSequence {
     return [
       { at: d0 + 0.0, run: () => (this.sound('silk'), V.express({ fear: 0.6, surprise: 0.3 }, 4), V.lookAt(null)) },
       { at: d0 + 0.6, run: () => (V.play('raised', 1, 600), this.sound('silk')) },
-      { at: d0 + 1.0, run: () => this.s.say(HOUSE_LINES.measure, 4) },
       { at: d0 + REVEAL[0], run: () => ((I.flare = 1), V.express({ fear: 0.7, distress: 0.5, surprise: 0.3 }, 3)) },
       { at: d0 + 3.6, run: () => (I.lightChandelier(), this.sound('bell'), this.sound('silk')) },
       { at: d0 + 5.0, run: () => V.lookAt(this.tmp.copy(this.visitor.position).add(new THREE.Vector3(0.3, 3.5, 0)).clone(), 0.6) },
       { at: d0 + 6.2, run: () => (V.lookAt(null), (I.flare = 0.8)) },
       { at: d0 + 7.6, run: () => (V.stop('raised'), (V.nervous = 0.2)) },
       // The smile is not hers.
-      { at: d0 + 7.9, run: () => (this.s.say(HOUSE_LINES.found, 4), V.express({ smile: 0.6, fear: 0.5, surprise: 0.2 }, 1.6), (V.stare = true)) },
+      { at: d0 + 7.9, run: () => (V.express({ smile: 0.6, fear: 0.5, surprise: 0.2 }, 1.6), (V.stare = true)) },
       { at: d0 + 9.4, run: () => ((V.stare = false), V.lookAt(mirror, 0.9)) },
       { at: d0 + 9.8, run: () => this.sound('sheet') },
       { at: d0 + 11.0, run: () => (this.sound('bell'), V.express({ fear: 0.7, surprise: 0.5 }, 5)) },
-      { at: d0 + 11.4, run: () => this.s.say(HOUSE_LINES.mirror, 3.2) },
     ];
   }
 

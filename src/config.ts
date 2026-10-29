@@ -13,19 +13,19 @@ export const PATH_HALF_WIDTH = 4.3;
 
 export const RUN = {
   /** Automatic jog speed with no effort (m/s). */
-  jogSpeed: 5.2,
+  jogSpeed: 6.4,
   /** Speed at full effort. */
-  sprintSpeed: 12.5,
+  sprintSpeed: 16,
   /** Effort added per Space tap (0..1 scale). */
   effortPerTap: 0.2,
   /** Effort lost per second when the player stops tapping. */
   effortDecay: 0.32,
   /** How fast actual speed chases the target (1/s). */
-  accel: 3.2,
-  decel: 1.6,
+  accel: 4.6,
+  decel: 2.3,
   /** Lane spring stiffness — higher is snappier. */
-  laneStiffness: 70,
-  laneDamping: 15,
+  laneStiffness: 95,
+  laneDamping: 18,
   /** Speed multiplier immediately after being caught. */
   stumbleSpeedFactor: 0.35,
   stumbleDuration: 1.05,
@@ -65,10 +65,10 @@ export const CAMERA = {
 
 /** The Demon's four elemental powers. */
 export const POWERS = {
-  grass: { cooldown: 5.5, windup: 1.3, footprint: 1.4, label: 'Grass' },
-  wind: { cooldown: 9, windup: 1.2, footprint: 8, label: 'Wind' },
-  water: { cooldown: 8, windup: 1.3, footprint: 1.7, label: 'Water' },
-  fire: { cooldown: 10, windup: 1.45, footprint: 3.1, label: 'Fire' },
+  grass: { cooldown: 4.7, windup: 1.05, footprint: 1.4, label: 'Grass' },
+  wind: { cooldown: 7.6, windup: 0.95, footprint: 8, label: 'Wind' },
+  water: { cooldown: 6.8, windup: 1.05, footprint: 1.7, label: 'Water' },
+  fire: { cooldown: 8.5, windup: 1.15, footprint: 3.1, label: 'Fire' },
 } as const;
 
 /**
@@ -93,14 +93,14 @@ export const FAIRNESS = {
   /** Metres before the finish where the Demon stops interfering. */
   noCastBeforeFinish: 30,
   /** Minimum gap between any two casts. */
-  castSpacing: 0.7,
+  castSpacing: 0.5,
 };
 
 export const MODE_TUNING = {
   ai: { cooldownScale: 1.0 },
   human: { cooldownScale: 1.0 },
-  /** 1v1: the Demon wins if it catches her this many times. */
-  versusCatchesToWin: 5,
+  /** 1v1: the Demon wins (the house takes her) if it catches her this many times; otherwise she gets away. */
+  versusCatchesToWin: 4,
 };
 
 export const COLORS = {

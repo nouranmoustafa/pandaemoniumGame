@@ -85,6 +85,8 @@ export class ParkChapter implements Chapter {
   private obstacleCtx: ObstacleContext;
   private demonCtx: DemonContext;
   private arriveTime = -1;
+  /** 1v1, the Visitor won: seconds into her break for the path home (-1 = not escaping). */
+  private escapeTime = -1;
   private hintTimer = 0;
   private hintShown = false;
   private tapped = false;
@@ -161,6 +163,7 @@ export class ParkChapter implements Chapter {
       choice: (options, i) => s.ui.showChoice(options, i, (k) => this.finale.choose(k)),
       caption: (text) => s.ui.setCaption(text),
       effort: (v, tapped, visible) => s.ui.setEffort(v, tapped, visible),
+      phone: (screen, over) => s.ui.showPhone(screen, over),
     });
     // Stage 4 hands straight on to Stage 5: the mirror, then laughter outside.
     this.house.onComplete = () => {
@@ -290,6 +293,7 @@ export class ParkChapter implements Chapter {
     this.chaseActive = false;
     this.titleFrame = null;
     this.arriveTime = -1;
+    this.escapeTime = -1;
     this.hintShown = false;
     this.hintTimer = 0;
     this.openingSaid = false;
@@ -537,6 +541,30 @@ export class ParkChapter implements Chapter {
     });
 
     // --- Arrival at the house ---
+    // 1v1: the result is decided here, by the chase. If the Demon caught her often enough the
+    // house takes her (the full story); if not, she gets away — straight down the path home.
+    if (this.escapeTime >= 0) {
+      this.escapeTime += rawDt;
+      if (this.escapeTime > 0.75 && !this.finale.active) {
+        this.finale.beginVictoryRun();
+        this.onHouseBegin();
+      }
+      return;
+    }
+    if (c.mode !== 'idle' && c.mode !== 'arrive' && c.x >= COURSE.finish && this.mode === 'versus' && this.versusWinner === 'visitor') {
+      this.chaseCaught = c.caughtCount;
+      this.chaseTime = c.elapsed;
+      this.chaseWinner = 'visitor';
+      c.controllable = false;
+      this.panel.setActive(false);
+      this.s.camera.fpv = false;
+      this.visitor.setFirstPerson(false);
+      this.s.ui.showHint(false);
+      this.s.camera.shake(0.3);
+      this.s.ui.setFade(1, 0.6);
+      this.escapeTime = 0;
+      return;
+    }
     if (c.mode !== 'idle' && c.mode !== 'arrive' && c.x >= COURSE.finish) {
       c.mode = 'arrive';
       c.controllable = false;
@@ -551,7 +579,7 @@ export class ParkChapter implements Chapter {
     // She slows to a stop at the foot of the porch; then the house takes her.
     if (this.arriveTime >= 0) {
       this.arriveTime += dt;
-      if (this.arriveTime > 2.4 && !this.house.active) {
+      if (this.arriveTime > 1.6 && !this.house.active) {
         const cam = this.s.camera.camera;
         const look = cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(10).add(cam.position);
         this.chaseCaught = c.caughtCount;

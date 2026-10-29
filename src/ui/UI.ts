@@ -163,9 +163,11 @@ export class UI {
   }
 
   /** Show the phone's screen (the app canvas itself) large on screen; null hides it. */
-  showPhone(screen: HTMLCanvasElement | null): void {
+  showPhone(screen: HTMLCanvasElement | null, over = false): void {
     if (screen && screen.parentElement !== this.phoneView) this.phoneView.append(screen);
     this.phoneView.classList.toggle('show', !!screen);
+    // Over the black (the Visitor's ending): centred, above the fade.
+    if (screen) this.phoneView.classList.toggle('over', over);
   }
 
   setCaption(text: string | null): void {
