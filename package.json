@@ -2,7 +2,7 @@
   "name": "the-house-wants-you",
   "private": true,
   "version": "0.1.0",
-  "description": "PANDEMONIUM — cinematic gothic horror chase",
+  "description": "PANDEMONIUM? — cinematic gothic horror chase",
   "type": "module",
   "scripts": {
     "dev": "vite",

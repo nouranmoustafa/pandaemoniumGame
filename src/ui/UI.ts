@@ -52,7 +52,7 @@ export class UI {
 
   constructor(handlers: UIHandlers) {
     this.title.innerHTML = `
-      <h1>Pan<span class="want">demon</span>ium</h1>
+      <h1>Pan<span class="want">demon</span>ium?</h1>
       <p class="tag">You matched with someone lovely. They asked to meet in the old park, after dark.</p>`;
     const menu = el('div', 'menu');
     this.menu = menu;
