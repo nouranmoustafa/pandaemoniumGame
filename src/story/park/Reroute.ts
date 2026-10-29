@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { ChaseCamera } from '../../camera/ChaseCamera';
-import { CHASE, LANES } from '../../config';
+import { CHASE } from '../../config';
 import type { EventBus } from '../../core/Events';
 import type { Input } from '../../core/Input';
 import { damp, smoothstep } from '../../core/math';
@@ -17,18 +17,17 @@ const ringH = (a: number, r: number) => Math.sin(a) * (1.4 + (r - IN) * 0.45);
 /** Metres before the ring at which it starts to heave up out of the ground. */
 const RISE_AT = 20;
 
-type Phase = 'off' | 'approach' | 'turn' | 'merge';
+type Phase = 'off' | 'approach' | 'turn' | 'done';
 
 /**
  * The Demon has won the chase: the road takes her back. Ahead of her the path
  * heaves up out of the grass and curls into a wide, banked half-circle of its
  * own cobbles; she can't stop, and it carries her round until she faces the
- * way she came. Then it hands her on (running, no longer hers to steer) to the
- * hill and the slide that end at the door (see CourseDirector.carryHome).
+ * way she came. There she blacks out (see ParkChapter); she wakes at the door.
  */
 export class Reroute {
   phase: Phase = 'off';
-  /** Called once she is round and running back toward the house. */
+  /** Called once she is round, facing the house's end of the park again. */
   onTurned: () => void = () => {};
   private ring: THREE.Mesh;
   private up = 0;
@@ -37,7 +36,6 @@ export class Reroute {
   private speed = 0;
   private y = 0;
   private z0 = 0;
-  private mergeT = 0;
   private tmp = new THREE.Vector3();
   private look = new THREE.Vector3();
   private ground = { heightAt: () => this.y, slopeAt: () => 0, rollAngle: () => 0 };
@@ -143,28 +141,10 @@ export class Reroute {
       v.place(RING_X - R * Math.sin(a), -R * Math.cos(a) + zIn, heading, this.ground);
       v.updateCinematic(dt, this.speed * 1.4);
       if (a >= Math.PI) {
-        // Round: facing the house's end of the park again.
-        this.phase = 'merge';
-        this.mergeT = 0;
-        this.camera.dir = 1;
-        this.camera.shake(0.35);
+        // Round: facing the house's end of the park again. She holds there until the chapter cuts away.
+        this.phase = 'done';
+        this.camera.shake(0.45);
         this.bus.emit('pavement:sarcasm', { x: c.x });
-      }
-    } else if (this.phase === 'merge') {
-      // Off the ring and back onto the path, still carried.
-      this.mergeT += dt;
-      const z = damp(c.z, LANES[2], 2.4, dt);
-      v.place(c.x + this.speed * dt, z, Math.PI / 2, this.env.pavement);
-      v.updateCinematic(dt, this.speed);
-      if (this.mergeT > 1.3) {
-        this.phase = 'off';
-        this.target = 0;
-        c.dir = 1;
-        c.mode = 'run';
-        c.lane = 2;
-        c.speed = this.speed;
-        c.controllable = false;
-        v.heading = Math.PI / 2;
         this.onTurned();
       }
     }

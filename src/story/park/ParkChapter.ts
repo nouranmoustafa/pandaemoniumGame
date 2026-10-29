@@ -88,7 +88,8 @@ export class ParkChapter implements Chapter {
   private overlay = new TargetingOverlay();
   private obstacleCtx: ObstacleContext;
   private demonCtx: DemonContext;
-  private arriveTime = -1;
+  /** Seconds into her blackout after the road turned her round (-1 = not blacked out). */
+  private blackout = -1;
   /** The road turning her round when the house wins the chase. */
   readonly reroute: Reroute;
   /** The chase has been decided (at DECIDE_X); the Demon's hand is off her. */
@@ -119,7 +120,7 @@ export class ParkChapter implements Chapter {
     s.scene.add(this.obstacles.group);
 
     this.abilities = new DemonAbilitySystem(s.scene, s.bus, this.obstacles.obstacles);
-    this.course = new CourseDirector(this.obstacles, this.abilities, this.env);
+    this.course = new CourseDirector(this.obstacles, this.abilities);
     this.observer = new VisitorObserver(s.bus, () => this.visitor.controller, () => this.abilities.obstacles);
     this.mind = new DemonMind(s.bus);
     this.inscriptions = new Inscriptions(this.env.pavement);
@@ -152,6 +153,11 @@ export class ParkChapter implements Chapter {
       fade: (o, sec) => s.ui.setFade(o, sec),
     });
     this.reroute = new Reroute(s.scene, this.env, this.visitor, s.camera, s.bus);
+    // Round the half-circle, she blacks out.
+    this.reroute.onTurned = () => {
+      this.blackout = 0;
+      s.ui.setFade(1, 0.35);
+    };
     this.approach.onChase = () => this.beginChase(false);
     this.house = new HouseSequence(s.scene, this.env, this.visitor, {
       bus: s.bus,
@@ -305,7 +311,7 @@ export class ParkChapter implements Chapter {
     this.complete = false;
     this.chaseActive = false;
     this.titleFrame = null;
-    this.arriveTime = -1;
+    this.blackout = -1;
     this.decided = false;
     this.reroute.reset();
     this.hintShown = false;
@@ -492,6 +498,24 @@ export class ParkChapter implements Chapter {
       this.updateApproach(rawDt);
       return;
     }
+    // Black. She wakes at the house, and it is already pulling her in (see HouseSequence.startWake).
+    if (this.blackout >= 0) {
+      this.blackout += rawDt;
+      if (this.blackout > 1.4 && !this.house.active) {
+        const c = this.visitor.controller;
+        this.blackout = -1;
+        this.chaseCaught = c.caughtCount;
+        this.chaseTime = c.elapsed;
+        this.chaseWinner = this.versusWinner;
+        this.s.camera.fpv = false;
+        this.visitor.setFirstPerson(false);
+        this.reroute.reset();
+        this.abilities.reset();
+        this.house.startWake();
+        this.onHouseBegin();
+      }
+      return;
+    }
     this.timeScale = damp(this.timeScale, 1, 5, rawDt);
     const dt = rawDt * this.timeScale;
     this.time += dt;
@@ -501,14 +525,9 @@ export class ParkChapter implements Chapter {
 
     if (!this.reroute.active) this.visitor.update(dt, this.s.input, this.env.pavement);
     this.reroute.update(dt, this.s.input);
-    // Turned round, she is carried: running flat out, not hers to steer.
-    if (c.dir !== CHASE.dir) {
-      c.effort = 1;
-      c.controllable = false;
-    }
     this.observer.update(dt);
     this.mind.update(dt, c, this.observer);
-    if (!this.decided || c.dir !== CHASE.dir) this.course.update(this.obstacleCtx);
+    if (!this.decided) this.course.update(this.obstacleCtx);
     if (!this.decided) this.director.update(dt, this.demonCtx);
     this.abilities.update(dt, this.obstacleCtx);
     this.obstacles.update(dt, this.obstacleCtx);
@@ -584,30 +603,6 @@ export class ParkChapter implements Chapter {
       }
       this.abilities.reset();
       this.reroute.begin();
-    }
-    if (c.mode !== 'idle' && c.mode !== 'arrive' && c.dir === 1 && c.x >= COURSE.finish) {
-      c.mode = 'arrive';
-      c.controllable = false;
-      this.arriveTime = 0;
-      this.panel.setActive(false);
-      // Out of her eyes: the capture is seen from outside, and nothing is said.
-      this.s.camera.fpv = false;
-      this.visitor.setFirstPerson(false);
-      this.s.camera.setMode('arrive');
-      this.s.ui.showHint(false);
-    }
-    // She slows to a stop at the foot of the porch; then the house takes her.
-    if (this.arriveTime >= 0) {
-      this.arriveTime += dt;
-      if (this.arriveTime > 1.6 && !this.house.active) {
-        const cam = this.s.camera.camera;
-        const look = cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(10).add(cam.position);
-        this.chaseCaught = c.caughtCount;
-        this.chaseTime = c.elapsed;
-        this.chaseWinner = this.versusWinner;
-        this.house.start({ pos: cam.position.clone(), look, fov: cam.fov });
-        this.onHouseBegin();
-      }
     }
   }
 

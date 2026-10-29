@@ -129,17 +129,17 @@ export class Approach {
     // Phone cues are queued when she stops (see update).
     this.arrivalCues = [
       { at: 0.1, run: () => (sound('buzz'), P.setPhone(1), P.express({ concern: 0.3, surprise: 0.2 }, 3)) },
-      // Her phone, held up to us: the same app. The invitation arrives at ~1.8 s and stays readable ~3.6 s.
+      // Her phone, held up to us: the same app. The invitation arrives at ~1.8 s and stays up ~6 s.
       { at: 0.6, run: () => this.say.phone(this.app.screen) },
       { at: 0.9, run: () => sound('notify') },
-      { at: 5.4, run: () => this.say.phone(null) },
+      { at: 7.8, run: () => this.say.phone(null) },
       // Eerie: the lamps stutter, the windows flare, the door eases open, the wind turns.
-      { at: 5.5, run: () => (this.env.lamps.stutter(STOP_X + 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
-      { at: 5.8, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
-      { at: 6.3, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
+      { at: 7.9, run: () => (this.env.lamps.stutter(STOP_X + 4, 1.6), sound('flicker'), this.env.flareHouse(), (H.doorOpen = 0.25), this.env.setGust(0.9)) },
+      { at: 8.2, run: () => (P.setPhone(0), P.lookAt(houseLook, 1), P.express({ fear: 0.6, surprise: 0.4 }, 4), (P.nervous = 0.6), sound('grass')) },
+      { at: 8.7, run: () => (P.play('hesitate', 1), this.env.rippleGrass(STOP_X + 2, 1)) },
       // She will not go in. She turns her back on it.
-      { at: 6.8, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
-      { at: 7.5, run: () => this.beginFlee() },
+      { at: 9.2, run: () => ((this.targetHeading = -Math.PI / 2), P.lookAt(null), P.express({ fear: 0.75, determined: 0.5 }, 4)) },
+      { at: 9.9, run: () => this.beginFlee() },
     ];
   }
 
@@ -187,7 +187,8 @@ export class Approach {
       if (this.phase === 'phone') {
         // The app: her date writes again — the invitation.
         const a = t - this.arriveAt;
-        this.app.update(APP_BEATS.sent + 0.8 + clamp(a - 0.4, 0, 6) * (APP_BEATS.inviteMsg - APP_BEATS.sent) / 1.4);
+        // It stops at the invitation: the chat must never run on into a later message.
+        this.app.update(Math.min(APP_BEATS.inviteMsg + 1, APP_BEATS.sent + 0.8 + clamp(a - 0.4, 0, 6) * (APP_BEATS.inviteMsg - APP_BEATS.sent) / 1.4));
         if (v.performer.phone > 0.3) v.aimPhone(v.eyesWorld(this.tmp), 1);
       }
     }
@@ -226,7 +227,7 @@ export class Approach {
       {
         // Her face, the house far behind her, as she turns.
         name: 'turn',
-        start: a0 + 5.6,
+        start: a0 + 8.0,
         blend: 1.2,
         frame: (_t, o) => {
           v.eyesWorld(E);

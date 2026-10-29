@@ -99,6 +99,8 @@ export class HouseSequence {
   private cues: Cue[] = [];
   private cueIndex = 0;
   private transition = -1;
+  /** She came to on the ground (a Demon win): dragged, not walked, to the door. */
+  private waking = false;
   private speed = 0;
   private targetSpeed = 0;
   private heading = Math.PI / 2;
@@ -221,6 +223,7 @@ export class HouseSequence {
     this.time = 0;
     this.resists = 0;
     this.transition = -1;
+    this.waking = false;
     this.complete = false;
     this.pulling = false;
     this.spiral = 0;
@@ -347,7 +350,8 @@ export class HouseSequence {
     const x = c.x + Math.sin(move) * this.speed * dt;
     const z = c.z + Math.cos(move) * this.speed * dt;
     v.place(x, z, this.heading, ground);
-    v.updateCinematic(dt, this.speed);
+    // Dragged along the ground, her legs don't walk.
+    v.updateCinematic(dt, this.waking ? 0 : this.speed);
   }
 
   private updateThreshold(dt: number): void {
@@ -388,6 +392,8 @@ export class HouseSequence {
     this.targetSpeed = 0;
     this.aim = null;
     this.perf.stop('pulled');
+    this.perf.stop('fallen');
+    this.waking = false;
     this.director.setShots(this.interiorShots());
     this.setCues(this.interiorCues());
     this.s.fade(0, 1.3);
@@ -528,6 +534,98 @@ export class HouseSequence {
   }
 
   // ---------------------------------------------------------------- script
+
+  /**
+   * The Demon won: the road turned her round and she blacked out. She comes to on the
+   * ground before the porch, and the vines are already coming for her out of the grass;
+   * they drag her, on her back, to the open door. (The interior follows as usual.)
+   */
+  startWake(): void {
+    this.start({ pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 40 });
+    this.waking = true;
+    const at = new THREE.Vector3(DOOR.x - 11, 0, DOOR.z + 0.3);
+    this.heading = this.targetHeading = -Math.PI / 2;
+    this.speed = this.targetSpeed = 0;
+    this.visitor.place(at.x, at.z, this.heading, this.porch);
+    this.perf.reset();
+    this.perf.play('fallen', 1, 600);
+    this.perf.express({ distress: 0.4, concern: 0.3 }, 3);
+    this.setCues(this.wakeCues());
+    const shots = this.wakeShots();
+    const f0: ShotFrame = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 36 };
+    shots[0].frame(0, f0);
+    this.director.setShots(shots);
+    this.director.startFrom(f0.pos, f0.look, f0.fov);
+    this.s.fade(0, 2.4);
+  }
+
+  private wakeCues(): Cue[] {
+    const V = this.perf;
+    const doorAt = new THREE.Vector3(DOOR.x, DOOR.y + 1.8, DOOR.z);
+    return [
+      { at: 0.4, run: () => this.sound('creak') },
+      // She comes to; the house is right behind her, its door open.
+      { at: 1.3, run: () => (V.express({ fear: 0.45, surprise: 0.4, distress: 0.4 }, 4), V.lookAt(doorAt, 0.8)) },
+      { at: 2.0, run: () => ((this.reachAt[0] = 2.0), this.sound('silk'), this.env.rippleGrass(DOOR.x - 6, 1)) },
+      { at: 2.4, run: () => ((this.reachAt[1] = 2.4), this.sound('silk')) },
+      { at: 2.8, run: () => ((this.reachAt[2] = 2.8), V.play('flinch'), V.express({ fear: 0.8, distress: 0.6 }, 6), (V.nervous = 0.7), this.s.shake(0.2)) },
+      {
+        at: 3.6,
+        run: () => {
+          this.pulling = true;
+          this.aim = new THREE.Vector3(DOOR.x - 0.2, 0, DOOR.z);
+          this.targetSpeed = 2.0;
+          this.s.shake(0.25);
+          this.s.prompt('TAP SPACE — <span>PULL BACK</span>');
+        },
+      },
+      { at: 5.2, run: () => (V.lookAt(this.tmp.set(this.visitor.position.x - 20, 1.2, this.visitor.position.z).clone(), 1), (this.targetSpeed = 2.4)) },
+    ];
+  }
+
+  private wakeShots(): Shot[] {
+    const v = this.visitor;
+    const E = new THREE.Vector3();
+    return [
+      {
+        // Low on the ground, by her face, the porch beyond her.
+        name: 'wake',
+        start: 0,
+        blend: 0,
+        frame: (_t, o) => {
+          // Above her face, looking down at her as she comes to.
+          v.eyesWorld(E);
+          o.pos.set(E.x - 1.6, E.y + 1.5, E.z + 1.5);
+          o.look.set(E.x + 0.3, E.y, E.z);
+          o.fov = 40;
+        },
+      },
+      {
+        // Wide, from the side: the grass rising for her, the open door.
+        name: 'seized',
+        start: 1.9,
+        blend: 1.2,
+        frame: (_t, o) => {
+          const p = v.position;
+          o.pos.set(p.x + 0.2, p.y + 3.2, p.z + 8.6);
+          o.look.set(p.x + 2.2, p.y + 0.3, p.z);
+          o.fov = 40;
+        },
+      },
+      {
+        // Tracking alongside as she is dragged to the threshold.
+        name: 'drag',
+        start: 3.8,
+        blend: 1.6,
+        frame: (_t, o) => {
+          const p = v.position;
+          o.pos.set(p.x + 0.6, p.y + 2.8, p.z + 7.8);
+          o.look.set(p.x + 2.4, p.y + 0.4, p.z);
+          o.fov = 40;
+        },
+      },
+    ];
+  }
 
   private thresholdCues(): Cue[] {
     const V = this.perf;
