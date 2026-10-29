@@ -4,7 +4,7 @@
  * written onto the park itself and rationed.
  */
 export const PARK_LINES = {
-  opening: "He said he'd be waiting by the fountain. There is no fountain.",
+  opening: 'Why would I go inside this creepy house?',
   arrive: 'Come in. Wipe your feet.',
   untouched: 'Not a scratch. How disappointing. How *impressive*.',
   versusDemon: 'There. Was that so difficult?',
